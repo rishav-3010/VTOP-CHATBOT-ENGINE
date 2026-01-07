@@ -3,6 +3,20 @@ const cheerio = require('cheerio');
 
 const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
 
+// ==========================================
+// 🛠️ HELPER: Get Correct Semester ID by Campus
+// ==========================================
+function getDefaultSemesterId(campus) {
+  // Normalize campus string just in case
+  const c = campus ? campus.toLowerCase() : 'vellore';
+  
+  // Update these IDs if the semester changes!
+  if (c === 'chennai') {
+    return 'CH20252601'; // Chennai Fall Semester
+  }
+  return 'VL20252601';   // Vellore Fall Semester
+}
+
 function isCacheValid(session, key) {
   if (!session?.cache?.[key]) return false;
   return session.cache[key].data && (Date.now() - session.cache[key].timestamp) < CACHE_DURATION;
@@ -59,7 +73,7 @@ async function getCGPA(authData, session, sessionId) {
   }
 }
 
-async function getAttendance(authData, session, sessionId, semesterId = 'VL20252601') {
+async function getAttendance(authData, session, sessionId, semesterId = null) {
   try {
     if (isCacheValid(session, 'attendance')) {
       console.log(`[${sessionId}] Cache hit: attendance`);
@@ -68,13 +82,18 @@ async function getAttendance(authData, session, sessionId, semesterId = 'VL20252
 
     console.log(`[${sessionId}] Fetching Attendance...`);
     const client = getClient(sessionId);
-    const baseUrl = getBaseUrl(getCampus(sessionId));
+    const campus = getCampus(sessionId);
+    const baseUrl = getBaseUrl(campus);
+    const isChennai = campus === 'chennai';
+    
+    // Dynamic Semester ID
+    const currentSemId = semesterId || getDefaultSemesterId(campus);
     
     const res = await client.post(
       `${baseUrl}/vtop/processViewStudentAttendance`,
       new URLSearchParams({
         _csrf: authData.csrfToken,
-        semesterSubId: semesterId,
+        semesterSubId: currentSemId,
         authorizedID: authData.authorizedID,
         x: new Date().toUTCString()
       }),
@@ -89,77 +108,98 @@ async function getAttendance(authData, session, sessionId, semesterId = 'VL20252
     
     const $ = cheerio.load(res.data);
     const attendanceData = [];
-    
-    $('#AttendanceDetailDataTable tbody tr').each((i, row) => {
+
+    // 🛠️ STRICT MAPPING (Added 'status' index)
+    // Vellore: Status is usually at index 8
+    // Chennai: Status is usually at index 12
+    const IDX = isChennai ? 
+      { type: 3, attended: 9, total: 10, percent: 11, status: 12 } : 
+      { type: 2, attended: 5, total: 6, percent: 7, status: 8 };
+
+    // Select Table
+    const $table = isChennai ? 
+      $('.table-responsive table').first() : 
+      $('#AttendanceDetailDataTable');
+
+    if ($table.length === 0) {
+      console.log(`[${sessionId}] ⚠️ Warning: Attendance table not found`);
+      return [];
+    }
+
+    $table.find('tbody tr').each((i, row) => {
       const cells = $(row).find('td');
-      if (cells.length > 7) {
-        const courseDetail = $(cells[2]).text().trim();
-const attendedClasses = parseFloat($(cells[5]).text().trim());
-const totalClasses = parseFloat($(cells[6]).text().trim());
-const attendancePercentage = $(cells[7]).find('span span').text().trim() || $(cells[7]).text().trim();
-const debarStatus = $(cells[8]).text().trim();
+      
+      // Ensure row has enough data
+      if (cells.length > IDX.percent) {
+        // 1. Extract Basic Data
+        const slNo = $(cells[0]).text().trim();
+        const courseType = $(cells[IDX.type]).text().trim();
+        
+        // Fixed Syntax: Logic to determine Course Detail string
+        const courseDetail = (campus === 'vellore') 
+          ? $(cells[2]).text().trim() 
+          : $(cells[1]).text().trim() + " - " + $(cells[2]).text().trim();
 
-// Calculate classes needed/can skip for 75% attendance
-let classesNeeded = 0;
-let canSkip = 0;
-let alertStatus = 'safe'; // 'safe', 'caution', 'danger'
-let alertMessage = '';
+        // 2. Extract Debar Status (NEW)
+        // We check if the cell exists before trying to read it to avoid crashes
+        const debarStatus = cells.length > IDX.status ? $(cells[IDX.status]).text().trim() : 'N/A';
+        
+        // 3. Parse Numbers
+        const attendedClasses = parseFloat($(cells[IDX.attended]).text().trim());
+        const totalClasses = parseFloat($(cells[IDX.total]).text().trim());
+        const attendancePercentage = $(cells[IDX.percent]).text().trim().replace('%', '');
 
-const currentPercentage = attendedClasses / totalClasses;
-const isLab = courseDetail.toLowerCase().includes('lab');
+        if (isNaN(attendedClasses) || isNaN(totalClasses)) return;
 
-if (currentPercentage < 0.7401) {
-  // Below 75% - calculate classes needed to reach 74.01%
-  classesNeeded = Math.ceil((0.7401 * totalClasses - attendedClasses) / 0.2599);
-  
-  if (isLab) {
-    classesNeeded = Math.ceil(classesNeeded / 2);
-    alertMessage = `${classesNeeded} lab(s) should be attended`;
-  } else {
-    alertMessage = `${classesNeeded} class(es) should be attended`;
-  }
-  alertStatus = 'danger';
-} else {
-  // Above 75% - calculate classes that can be skipped
-  canSkip = Math.floor((attendedClasses - 0.7401 * totalClasses) / 0.7401);
-  
-  if (isLab) {
-    canSkip = Math.floor(canSkip / 2);
-  }
-  
-  if (canSkip < 0) {
-    canSkip = 0;
-  }
-  
-  if (isLab) {
-    alertMessage = `Only ${canSkip} lab(s) can be skipped`;
-  } else {
-    alertMessage = `Only ${canSkip} class(es) can be skipped`;
-  }
-  
-  // Check if in caution zone (74.01% - 74.99%)
-  if (currentPercentage >= 0.7401 && currentPercentage <= 0.7499) {
-    alertStatus = 'caution';
-  } else {
-    alertStatus = 'safe';
-  }
-}
+        // 4. Calculation Logic
+        let classesNeeded = 0;
+        let canSkip = 0;
+        let alertStatus = 'safe';
+        let alertMessage = '';
 
-const attendance = {
-  slNo: $(cells[0]).text().trim(),
-  courseDetail: courseDetail,
-  attendedClasses: attendedClasses.toString(),
-  totalClasses: totalClasses.toString(),
-  attendancePercentage: attendancePercentage,
-  debarStatus: debarStatus,
-  classesNeeded: classesNeeded,
-  canSkip: canSkip,
-  alertStatus: alertStatus,
-  alertMessage: alertMessage,
-  isLab: isLab
-};
-        if (attendance.slNo) {
-          attendanceData.push(attendance);
+        const currentPercentage = attendedClasses / totalClasses;
+        const isLab = courseType.toLowerCase().includes('lab') || courseDetail.toLowerCase().includes('lab');
+
+        // Threshold 0.7401
+        if (currentPercentage < 0.7401) {
+          classesNeeded = Math.ceil((0.7401 * totalClasses - attendedClasses) / 0.2599);
+          
+          if (isLab) {
+            classesNeeded = Math.ceil(classesNeeded / 2);
+            alertMessage = `${classesNeeded} lab(s) should be attended`;
+          } else {
+            alertMessage = `${classesNeeded} class(es) should be attended`;
+          }
+          alertStatus = 'danger';
+        } else {
+          canSkip = Math.floor((attendedClasses - 0.7401 * totalClasses) / 0.7401);
+          
+          if (isLab) canSkip = Math.floor(canSkip / 2);
+          if (canSkip < 0) canSkip = 0;
+          
+          alertMessage = isLab ? `Only ${canSkip} lab(s) can be skipped` : `Only ${canSkip} class(es) can be skipped`;
+          
+          if (currentPercentage >= 0.7401 && currentPercentage <= 0.7499) {
+            alertStatus = 'caution';
+          } else {
+            alertStatus = 'safe';
+          }
+        }
+
+        if (slNo && !isNaN(parseInt(slNo))) {
+          attendanceData.push({
+            slNo,
+            courseDetail,
+            attendedClasses: attendedClasses.toString(),
+            totalClasses: totalClasses.toString(),
+            attendancePercentage: attendancePercentage + '%',
+            debarStatus: debarStatus, // <--- Now using the extracted variable
+            classesNeeded,
+            canSkip,
+            alertStatus,
+            alertMessage,
+            isLab
+          });
         }
       }
     });
@@ -177,7 +217,7 @@ const attendance = {
   }
 }
 
-async function getMarks(authData, session, sessionId, semesterId = 'VL20252601') {
+async function getMarks(authData, session, sessionId, semesterId = null) {
   try {
     if (isCacheValid(session, 'marks')) {
       console.log(`[${sessionId}] Cache hit: marks`);
@@ -186,13 +226,17 @@ async function getMarks(authData, session, sessionId, semesterId = 'VL20252601')
 
     console.log(`[${sessionId}] Fetching Marks...`);
     const client = getClient(sessionId);
-    const baseUrl = getBaseUrl(getCampus(sessionId));
+    const campus = getCampus(sessionId);
+    const baseUrl = getBaseUrl(campus);
+    
+    // FIX: Dynamic Semester ID
+    const currentSemId = semesterId || getDefaultSemesterId(campus);
     
     const res = await client.post(
       `${baseUrl}/vtop/examinations/doStudentMarkView`,
       new URLSearchParams({
         _csrf: authData.csrfToken,
-        semesterSubId: semesterId,
+        semesterSubId: currentSemId,
         authorizedID: authData.authorizedID,
         x: new Date().toUTCString()
       }),
@@ -242,14 +286,12 @@ async function getMarks(authData, session, sessionId, semesterId = 'VL20252601')
           };
           course.marks.push(mark);
 
-          // Accumulate totals
           totMaxMarks += parseFloat(mark.max) || 0;
           totWeightagePercent += parseFloat(mark.percent) || 0;
           totScored += parseFloat(mark.scored) || 0;
           totWeightageEqui += parseFloat(mark.weightage) || 0;
         });
 
-        // Add Total row to marks array
         const lostWeightage = (totWeightagePercent - totWeightageEqui).toFixed(2);
         course.marks.push({
           title: 'Total',
@@ -258,16 +300,13 @@ async function getMarks(authData, session, sessionId, semesterId = 'VL20252601')
           weightage: totWeightageEqui.toFixed(2),
           percent: totWeightagePercent.toFixed(2),
           lostWeightage: lostWeightage,
-          isTotal: true  // Flag to identify total row
+          isTotal: true
         });
 
-        // Determine course type and passing info
         const isTheory = course.courseTitle.toLowerCase().includes('theory');
-        const isLab = course.courseTitle.toLowerCase().includes('lab') || 
-                      course.courseTitle.toLowerCase().includes('online');
+        const isLab = course.courseTitle.toLowerCase().includes('lab') || course.courseTitle.toLowerCase().includes('online');
         const isSTS = course.courseTitle.toLowerCase().includes('soft');
 
-        // Calculate passing requirements (only if weightage is 60)
         if (totWeightagePercent == 60) {
           let passMarks = null;
           let passStatus = 'unknown';
@@ -296,10 +335,8 @@ async function getMarks(authData, session, sessionId, semesterId = 'VL20252601')
             type: isTheory ? 'Theory' : (isLab ? 'Lab' : (isSTS ? 'STS' : 'Unknown'))
           };
         }
-
         i++;
       }
-      
       courses.push(course);
     }
     
@@ -316,7 +353,7 @@ async function getMarks(authData, session, sessionId, semesterId = 'VL20252601')
   }
 }
 
-async function getAssignments(authData, session, sessionId, semesterId = 'VL20252601') {
+async function getAssignments(authData, session, sessionId, semesterId = null) {
   try {
     if (isCacheValid(session, 'assignments')) {
       console.log(`[${sessionId}] Cache hit: assignments`);
@@ -325,14 +362,18 @@ async function getAssignments(authData, session, sessionId, semesterId = 'VL2025
 
     console.log(`[${sessionId}] Fetching Assignments...`);
     const client = getClient(sessionId);
-    const baseUrl = getBaseUrl(getCampus(sessionId));
+    const campus = getCampus(sessionId);
+    const baseUrl = getBaseUrl(campus);
+    
+    // FIX: Dynamic Semester ID
+    const currentSemId = semesterId || getDefaultSemesterId(campus);
     
     const subRes = await client.post(
       `${baseUrl}/vtop/examinations/doDigitalAssignment`,
       new URLSearchParams({
         authorizedID: authData.authorizedID,
         x: new Date().toUTCString(),
-        semesterSubId: semesterId,
+        semesterSubId: currentSemId,
         _csrf: authData.csrfToken
       }),
       {
@@ -389,54 +430,52 @@ async function getAssignments(authData, session, sessionId, semesterId = 'VL2025
             const aCells = $a(aRow).find('td');
             const dueDateStr = $a(aCells[4]).find('span').text().trim() || $a(aCells[4]).text().trim();
 
-// Calculate days left
-let daysLeft = null;
-let status = '';
-if (dueDateStr && dueDateStr !== '-') {
-  try {
-    // Parse date format: "DD-MMM-YYYY" (e.g., "22-Sep-2025")
-    const dateMap = {
-      Jan: '01', Feb: '02', Mar: '03', Apr: '04',
-      May: '05', Jun: '06', Jul: '07', Aug: '08',
-      Sep: '09', Sept: '09', Oct: '10', Nov: '11', Dec: '12'
-    };
-    
-    const parts = dueDateStr.split('-');
-    if (parts.length === 3) {
-      const day = parts[0];
-      const month = dateMap[parts[1]];
-      const year = parts[2];
-      
-      const dueDate = new Date(`${year}-${month}-${day}`);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      dueDate.setHours(0, 0, 0, 0);
-      
-      const diffTime = dueDate - today;
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      
-      daysLeft = diffDays;
-      
-      if (diffDays < 0) {
-        status = `${Math.abs(diffDays)} days overdue`;
-      } else if (diffDays === 0) {
-        status = 'Due today!';
-      } else {
-        status = `${diffDays} days left`;
-      }
-    }
-  } catch (error) {
-    console.log(`[${sessionId}] Error parsing date: ${dueDateStr}`);
-  }
-}
+            let daysLeft = null;
+            let status = '';
+            if (dueDateStr && dueDateStr !== '-') {
+              try {
+                const dateMap = {
+                  Jan: '01', Feb: '02', Mar: '03', Apr: '04',
+                  May: '05', Jun: '06', Jul: '07', Aug: '08',
+                  Sep: '09', Sept: '09', Oct: '10', Nov: '11', Dec: '12'
+                };
+                
+                const parts = dueDateStr.split('-');
+                if (parts.length === 3) {
+                  const day = parts[0];
+                  const month = dateMap[parts[1]];
+                  const year = parts[2];
+                  
+                  const dueDate = new Date(`${year}-${month}-${day}`);
+                  const today = new Date();
+                  today.setHours(0, 0, 0, 0);
+                  dueDate.setHours(0, 0, 0, 0);
+                  
+                  const diffTime = dueDate - today;
+                  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                  
+                  daysLeft = diffDays;
+                  
+                  if (diffDays < 0) {
+                    status = `${Math.abs(diffDays)} days overdue`;
+                  } else if (diffDays === 0) {
+                    status = 'Due today!';
+                  } else {
+                    status = `${diffDays} days left`;
+                  }
+                }
+              } catch (error) {
+                console.log(`[${sessionId}] Error parsing date: ${dueDateStr}`);
+              }
+            }
 
-const assignment = {
-  slNo: $a(aCells[0]).text().trim(),
-  title: $a(aCells[1]).text().trim(),
-  dueDate: dueDateStr,
-  daysLeft: daysLeft,
-  status: status
-};
+            const assignment = {
+              slNo: $a(aCells[0]).text().trim(),
+              title: $a(aCells[1]).text().trim(),
+              dueDate: dueDateStr,
+              daysLeft: daysLeft,
+              status: status
+            };
             
             if (assignment.slNo && assignment.title && assignment.title !== 'Title') {
               subject.assignments.push(assignment);
@@ -521,7 +560,7 @@ async function getLoginHistory(authData, session, sessionId) {
   }
 }
 
-async function getExamSchedule(authData, session, sessionId, semesterId = 'VL20252601') {
+async function getExamSchedule(authData, session, sessionId, semesterId = null) {
   try {
     if (isCacheValid(session, 'examSchedule')) {
       console.log(`[${sessionId}] Cache hit: examSchedule`);
@@ -530,7 +569,11 @@ async function getExamSchedule(authData, session, sessionId, semesterId = 'VL202
 
     console.log(`[${sessionId}] Fetching Exam Schedule...`);
     const client = getClient(sessionId);
-    const baseUrl = getBaseUrl(getCampus(sessionId));
+    const campus = getCampus(sessionId);
+    const baseUrl = getBaseUrl(campus);
+    
+    // FIX: Dynamic Semester ID
+    const currentSemId = semesterId || getDefaultSemesterId(campus);
     
     await client.post(
       `${baseUrl}/vtop/examinations/StudExamSchedule`,
@@ -554,7 +597,7 @@ async function getExamSchedule(authData, session, sessionId, semesterId = 'VL202
       new URLSearchParams({
         authorizedID: authData.authorizedID,
         _csrf: authData.csrfToken,
-        semesterSubId: semesterId
+        semesterSubId: currentSemId
       }),
       {
         headers: {
@@ -624,8 +667,7 @@ async function getExamSchedule(authData, session, sessionId, semesterId = 'VL202
     throw error;
   }
 }
-
-async function getTimetable(authData, session, sessionId, semesterId = 'VL20252601') {
+async function getTimetable(authData, session, sessionId, semesterId = null) {
   try {
     if (isCacheValid(session, 'timetable')) {
       console.log(`[${sessionId}] Cache hit: timetable`);
@@ -634,13 +676,17 @@ async function getTimetable(authData, session, sessionId, semesterId = 'VL202526
 
     console.log(`[${sessionId}] Fetching Timetable...`);
     const client = getClient(sessionId);
-    const baseUrl = getBaseUrl(getCampus(sessionId));
+    const campus = getCampus(sessionId);
+    const baseUrl = getBaseUrl(campus);
+    
+    // FIX: Dynamic Semester ID
+    const currentSemId = semesterId || getDefaultSemesterId(campus);
     
     const res = await client.post(
       `${baseUrl}/vtop/processViewTimeTable`,
       new URLSearchParams({
         _csrf: authData.csrfToken,
-        semesterSubId: semesterId,
+        semesterSubId: currentSemId,
         authorizedID: authData.authorizedID,
         x: new Date().toUTCString()
       }),
@@ -659,71 +705,47 @@ async function getTimetable(authData, session, sessionId, semesterId = 'VL202526
       schedule: {}
     };
     
-    // Parse course details from table
     const table = $('tbody').first();
     const rows = table.find('tr');
     
     rows.each((i, row) => {
       const cells = $(row).find('td');
-      
-      // Skip rows with wrong number of columns or footer rows
       if (cells.length < 9) return;
-      
-      // Check if this is a total credits row
       const firstCellText = $(cells[0]).text().trim();
       if (firstCellText.includes('Total Number Of Credits')) return;
-      
-      // Skip header rows
       if ($(row).find('th').length > 0) return;
-      
       const slNo = $(cells[0]).text().trim();
-      
-      // Only process rows with valid serial numbers
       if (!slNo || isNaN(parseInt(slNo))) return;
       
-      // Column 2: Course code and title (index 2)
       const courseCodeTitle = $(cells[2]).find('p').first().text().trim();
-      
-      // Column 7: Slot and venue (index 7)
       const slotVenueCell = $(cells[7]);
-      // Get all p tags and extract text
       const slotVenueParts = slotVenueCell.find('p').map((i, el) => $(el).text().trim()).get();
       const slotVenue = slotVenueParts.join(' ').replace(/\s+/g, ' ').trim();
-      
-      // Column 8: Faculty name and school (index 8)
       const facNameSchoolCell = $(cells[8]);
       const facNameSchoolParts = facNameSchoolCell.find('p').map((i, el) => $(el).text().trim()).get();
       const facNameSchool = facNameSchoolParts.join(' ').replace(/\s+/g, ' ').trim();
       
       if (!courseCodeTitle || courseCodeTitle === '') return;
       
-      // Parse course code and title
       const codeTitle = courseCodeTitle.split('-');
       const courseCode = codeTitle[0] ? codeTitle[0].trim() : '';
-      const courseTitle = codeTitle.slice(1).join('-').trim(); // Handle cases with multiple dashes
+      const courseTitle = codeTitle.slice(1).join('-').trim();
       
-      // Parse slot and venue
-      // Format: "G1+TG1 - SJT408" or "B1 - SJT607"
       let slot = '';
       let venue = '';
-      
       if (slotVenue.includes('-')) {
         const parts = slotVenue.split('-');
         slot = parts[0].trim();
         venue = parts[1].trim();
       }
       
-      // Parse faculty name and school
       let facName = '';
       let facSchool = '';
-      
       if (facNameSchool.includes('-')) {
         const parts = facNameSchool.split('-');
         facName = parts[0].trim();
         facSchool = parts[1].trim();
       }
-      
-      console.log(`[${sessionId}] Parsed: ${courseCode} | Slot: ${slot} | Venue: ${venue}`);
       
       if (courseCode && slot && slot !== 'NIL' && venue !== 'NIL') {
         timetableData.courses.push({
@@ -737,9 +759,7 @@ async function getTimetable(authData, session, sessionId, semesterId = 'VL202526
       }
     });
     
-    // Slot timings mapping - EXACTLY from the extension
     const slotTimes = {
-      // Theory slots - Morning
       'A1': [{ day: 'Monday', time: '08:00 - 09:00 AM' }, { day: 'Wednesday', time: '09:00 - 10:00 AM' }],
       'B1': [{ day: 'Tuesday', time: '08:00 - 09:00 AM' }, { day: 'Thursday', time: '09:00 - 10:00 AM' }],
       'C1': [{ day: 'Wednesday', time: '08:00 - 09:00 AM' }, { day: 'Friday', time: '09:00 - 10:00 AM' }],
@@ -747,8 +767,6 @@ async function getTimetable(authData, session, sessionId, semesterId = 'VL202526
       'E1': [{ day: 'Friday', time: '08:00 - 10:00 AM' }, { day: 'Tuesday', time: '10:00 - 11:00 AM' }],
       'F1': [{ day: 'Monday', time: '09:00 - 10:00 AM' }, { day: 'Wednesday', time: '10:00 - 11:00 AM' }],
       'G1': [{ day: 'Tuesday', time: '09:00 - 10:00 AM' }, { day: 'Thursday', time: '10:00 - 11:00 AM' }],
-      
-      // Theory slots - Afternoon  
       'A2': [{ day: 'Monday', time: '02:00 - 03:00 PM' }, { day: 'Wednesday', time: '03:00 - 04:00 PM' }],
       'B2': [{ day: 'Tuesday', time: '02:00 - 03:00 PM' }, { day: 'Thursday', time: '03:00 - 04:00 PM' }],
       'C2': [{ day: 'Wednesday', time: '02:00 - 03:00 PM' }, { day: 'Friday', time: '03:00 - 04:00 PM' }],
@@ -756,8 +774,6 @@ async function getTimetable(authData, session, sessionId, semesterId = 'VL202526
       'E2': [{ day: 'Friday', time: '02:00 - 04:00 PM' }, { day: 'Tuesday', time: '04:00 - 05:00 PM' }],
       'F2': [{ day: 'Monday', time: '03:00 - 04:00 PM' }, { day: 'Wednesday', time: '04:00 - 05:00 PM' }],
       'G2': [{ day: 'Tuesday', time: '03:00 - 04:00 PM' }, { day: 'Thursday', time: '04:00 - 05:00 PM' }],
-      
-      // Theory addon slots
       'TA1': [{ day: 'Friday', time: '10:00 - 11:00 AM' }],
       'TB1': [{ day: 'Monday', time: '11:00 - 12:00 PM' }],
       'TC1': [{ day: 'Tuesday', time: '11:00 - 12:00 PM' }],
@@ -767,7 +783,6 @@ async function getTimetable(authData, session, sessionId, semesterId = 'VL202526
       'TG1': [{ day: 'Monday', time: '12:00 - 01:00 PM' }],
       'TAA1': [{ day: 'Tuesday', time: '12:00 - 01:00 PM' }],
       'TCC1': [{ day: 'Thursday', time: '12:00 - 01:00 PM' }],
-      
       'TA2': [{ day: 'Friday', time: '04:00 - 05:00 PM' }],
       'TB2': [{ day: 'Monday', time: '05:00 - 06:00 PM' }],
       'TC2': [{ day: 'Tuesday', time: '05:00 - 06:00 PM' }],
@@ -779,8 +794,6 @@ async function getTimetable(authData, session, sessionId, semesterId = 'VL202526
       'TBB2': [{ day: 'Wednesday', time: '06:00 - 07:00 PM' }],
       'TCC2': [{ day: 'Thursday', time: '06:00 - 07:00 PM' }],
       'TDD2': [{ day: 'Friday', time: '06:00 - 07:00 PM' }],
-      
-      // Lab slots - Morning (only odd numbered labs are used)
       'L1': [{ day: 'Monday', time: '08:00 - 09:50 AM' }],
       'L3': [{ day: 'Monday', time: '09:51 - 11:40 AM' }],
       'L5': [{ day: 'Monday', time: '11:40 AM - 01:30 PM' }],
@@ -796,8 +809,6 @@ async function getTimetable(authData, session, sessionId, semesterId = 'VL202526
       'L25': [{ day: 'Friday', time: '08:00 - 09:50 AM' }],
       'L27': [{ day: 'Friday', time: '09:51 - 11:40 AM' }],
       'L29': [{ day: 'Friday', time: '11:40 AM - 01:30 PM' }],
-      
-      // Lab slots - Afternoon (only odd numbered labs are used)
       'L31': [{ day: 'Monday', time: '02:00 - 03:50 PM' }],
       'L33': [{ day: 'Monday', time: '03:51 - 05:40 PM' }],
       'L35': [{ day: 'Monday', time: '05:40 - 07:30 PM' }],
@@ -813,8 +824,6 @@ async function getTimetable(authData, session, sessionId, semesterId = 'VL202526
       'L55': [{ day: 'Friday', time: '02:00 - 03:50 PM' }],
       'L57': [{ day: 'Friday', time: '03:51 - 05:40 PM' }],
       'L59': [{ day: 'Friday', time: '05:40 - 07:30 PM' }],
-      
-      // Lab slots - Even numbers (L2, L4, etc. are paired with odd ones)
       'L2': [{ day: 'Monday', time: '08:00 - 09:50 AM' }],
       'L4': [{ day: 'Monday', time: '09:51 - 11:40 AM' }],
       'L6': [{ day: 'Monday', time: '11:40 AM - 01:30 PM' }],
@@ -847,7 +856,6 @@ async function getTimetable(authData, session, sessionId, semesterId = 'VL202526
       'L60': [{ day: 'Friday', time: '05:40 - 07:30 PM' }]
     };
     
-    // Build schedule organized by day
     timetableData.schedule = {
       Monday: [],
       Tuesday: [],
@@ -858,7 +866,6 @@ async function getTimetable(authData, session, sessionId, semesterId = 'VL202526
     
     timetableData.courses.forEach(course => {
       const slots = course.slot.split('+');
-      
       slots.forEach(slot => {
         const slotInfo = slotTimes[slot];
         if (slotInfo) {
@@ -878,7 +885,6 @@ async function getTimetable(authData, session, sessionId, semesterId = 'VL202526
       });
     });
     
-    // Sort each day's classes by time
     Object.keys(timetableData.schedule).forEach(day => {
       timetableData.schedule[day].sort((a, b) => {
         const timeA = a.time.split(' - ')[0];
@@ -893,7 +899,6 @@ async function getTimetable(authData, session, sessionId, semesterId = 'VL202526
     }
     
     console.log(`[${sessionId}] Timetable fetched for ${authData.authorizedID}`);
-    console.log(`[${sessionId}] Total courses parsed: ${timetableData.courses.length}`);
     return timetableData;
   } catch (error) {
     console.error(`[${sessionId}] Timetable fetch error:`, error.message);
@@ -912,7 +917,6 @@ async function getLeaveHistory(authData, session, sessionId) {
     const client = getClient(sessionId);
     const baseUrl = getBaseUrl(getCampus(sessionId));
     
-    // Step 1: Navigate to leave request section
     await client.post(
       `${baseUrl}/vtop/hostels/student/leave/1`,
       new URLSearchParams({
@@ -931,7 +935,6 @@ async function getLeaveHistory(authData, session, sessionId) {
     
     await new Promise(resolve => setTimeout(resolve, 500));
     
-    // Step 2: Fetch leave history
     const res = await client.post(
       `${baseUrl}/vtop/hostels/student/leave/6`,
       new URLSearchParams({
@@ -955,7 +958,6 @@ async function getLeaveHistory(authData, session, sessionId) {
     
     $('#LeaveHistoryTable tbody tr').each((i, row) => {
       const allCells = $(row).find('td');
-      
       if (allCells.length >= 7) {
         const leave = {
           place: $(allCells[1]).text().trim(),
@@ -965,7 +967,6 @@ async function getLeaveHistory(authData, session, sessionId) {
           to: $(allCells[5]).text().trim(),
           status: $(allCells[6]).text().trim()
         };
-        
         if (leave.place) {
           leaveHistory.push(leave);
         }
@@ -985,7 +986,7 @@ async function getLeaveHistory(authData, session, sessionId) {
   }
 }
 
-async function getGrades(authData, session, sessionId, semesterId = 'VL20252601') {
+async function getGrades(authData, session, sessionId, semesterId = null) {
   try {
     if (isCacheValid(session, 'grades')) {
       console.log(`[${sessionId}] Cache hit: grades`);
@@ -994,9 +995,14 @@ async function getGrades(authData, session, sessionId, semesterId = 'VL20252601'
 
     console.log(`[${sessionId}] Fetching Grades...`);
     const client = getClient(sessionId);
-    const baseUrl = getBaseUrl(getCampus(sessionId));
+    const campus = getCampus(sessionId);
+    const baseUrl = getBaseUrl(campus);
     
-    // Step 1: Navigate to grades page
+    // FIX: Dynamic Semester ID or Default if null
+    // Note: Grades often use previous sem ID, so check if CHENNAI needs diff ID here
+    // For now, using same logic or default fallback
+    const currentSemId = semesterId || getDefaultSemesterId(campus);
+
     await client.post(
       `${baseUrl}/vtop/examinations/examGradeView/StudentGradeView`,
       new URLSearchParams({
@@ -1015,13 +1021,12 @@ async function getGrades(authData, session, sessionId, semesterId = 'VL20252601'
     
     await new Promise(resolve => setTimeout(resolve, 500));
     
-    // Step 2: Fetch grades for semester
     const res = await client.post(
       `${baseUrl}/vtop/examinations/examGradeView/doStudentGradeView`,
       new URLSearchParams({
         authorizedID: authData.authorizedID,
         _csrf: authData.csrfToken,
-        semesterSubId: semesterId
+        semesterSubId: currentSemId
       }),
       {
         headers: {
@@ -1398,11 +1403,9 @@ async function getFacultyInfo(authData, session, sessionId, facultyName) {
     const baseUrl = getBaseUrl(getCampus(sessionId));
     
     if (!facultyName || facultyName.length < 3) {
-      console.log(`[${sessionId}] Faculty name too short: ${facultyName}`);
       return { error: 'Please provide at least 3 characters of the faculty name', faculties: [] };
     }
     
-    // Step 1: Navigate to faculty search page
     await client.post(
       `${baseUrl}/vtop/hrms/employeeSearchForStudent`,
       new URLSearchParams({
@@ -1421,7 +1424,6 @@ async function getFacultyInfo(authData, session, sessionId, facultyName) {
     
     await new Promise(resolve => setTimeout(resolve, 500));
     
-    // Step 2: Search for faculty
     console.log(`[${sessionId}] Searching with query: ${facultyName.toLowerCase()}`);
     const searchRes = await client.post(
       `${baseUrl}/vtop/hrms/EmployeeSearchForStudent`,
@@ -1440,12 +1442,11 @@ async function getFacultyInfo(authData, session, sessionId, facultyName) {
       }
     );
     
-    // Parse search results
     const $search = cheerio.load(searchRes.data);
     const faculties = [];
     
     $search('table tbody tr').each((i, row) => {
-      if (i === 0) return; // Skip header row
+      if (i === 0) return;
       
       const cells = $search(row).find('td');
       if (cells.length >= 4) {
@@ -1462,16 +1463,12 @@ async function getFacultyInfo(authData, session, sessionId, facultyName) {
     });
     
     if (faculties.length === 0) {
-      console.log(`[${sessionId}] No faculty found for: ${facultyName}`);
       return { 
         error: `No faculty found matching "${facultyName}". Please check the spelling and try again.`, 
         faculties: [] 
       };
     }
     
-    console.log(`[${sessionId}] Found ${faculties.length} faculty member(s)`);
-    
-    // Return search results for multiple faculties (let client choose)
     if (faculties.length > 1) {
       return { 
         faculties, 
@@ -1480,12 +1477,9 @@ async function getFacultyInfo(authData, session, sessionId, facultyName) {
       };
     }
     
-    // Auto-fetch details for single result
     const selectedFaculty = faculties[0];
-    
     await new Promise(resolve => setTimeout(resolve, 500));
     
-    // Step 3: Get faculty details
     const detailsRes = await client.post(
       `${baseUrl}/vtop/hrms/EmployeeSearch1ForStudent`,
       new URLSearchParams({
@@ -1518,14 +1512,12 @@ async function getFacultyInfo(authData, session, sessionId, facultyName) {
       }
     });
     
-    // Extract open hours
     const openHours = [];
     $('table.table-bordered').last().find('tbody tr').each((i, row) => {
       const cells = $(row).find('td');
       if (cells.length >= 2) {
         const day = $(cells[0]).text().trim();
         const timing = $(cells[1]).text().trim();
-        // Skip header row
         if (day && timing && day !== 'Week Day') {
           openHours.push({ day, timing });
         }
@@ -1541,7 +1533,6 @@ async function getFacultyInfo(authData, session, sessionId, facultyName) {
       openHours
     };
     
-    console.log(`[${sessionId}] Faculty details fetched for ${selectedFaculty.name}`);
     return facultyData;
   } catch (error) {
     console.error(`[${sessionId}] Faculty Info fetch error:`, error.message);
@@ -1549,71 +1540,7 @@ async function getFacultyInfo(authData, session, sessionId, facultyName) {
   }
 }
 
-async function getFacultyDetailsByEmpId(authData, session, sessionId, empId) {
-  try {
-    console.log(`[${sessionId}] Fetching Faculty Details for empId: ${empId}`);
-    const client = getClient(sessionId);
-    const baseUrl = getBaseUrl(getCampus(sessionId));
-    
-    const detailsRes = await client.post(
-      `${baseUrl}/vtop/hrms/EmployeeSearch1ForStudent`,
-      new URLSearchParams({
-        _csrf: authData.csrfToken,
-        authorizedID: authData.authorizedID,
-        x: new Date().toUTCString(),
-        empId: empId
-      }),
-      {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Referer': `${baseUrl}/vtop/hrms/employeeSearchForStudent`,
-          'X-Requested-With': 'XMLHttpRequest'
-        }
-      }
-    );
-    
-    const $ = cheerio.load(detailsRes.data);
-    const details = {};
-    
-    $('table.table-bordered').first().find('tbody tr').each((i, row) => {
-      const cells = $(row).find('td');
-      if (cells.length >= 2) {
-        const label = $(cells[0]).find('b').text().trim();
-        const value = $(cells[1]).text().trim();
-        
-        if (label && value && !label.includes('Image')) {
-          details[label] = value;
-        }
-      }
-    });
-    
-    // Extract open hours
-    const openHours = [];
-    $('table.table-bordered').last().find('tbody tr').each((i, row) => {
-      const cells = $(row).find('td');
-      if (cells.length >= 2) {
-        const day = $(cells[0]).text().trim();
-        const timing = $(cells[1]).text().trim();
-        if (day && timing && day !== 'Week Day') {
-          openHours.push({ day, timing });
-        }
-      }
-    });
-    
-    const facultyData = {
-      details,
-      openHours
-    };
-    
-    console.log(`[${sessionId}] Faculty details fetched`);
-    return facultyData;
-  } catch (error) {
-    console.error(`[${sessionId}] Faculty Details fetch error:`, error.message);
-    throw error;
-  }
-}
-
-async function getAcademicCalendar(authData, session, sessionId, semesterId = 'VL20252605') {
+async function getAcademicCalendar(authData, session, sessionId, semesterId = null) {
   try {
     if (isCacheValid(session, 'academicCalendar')) {
       console.log(`[${sessionId}] Cache hit: academicCalendar`);
@@ -1622,9 +1549,13 @@ async function getAcademicCalendar(authData, session, sessionId, semesterId = 'V
 
     console.log(`[${sessionId}] Fetching Academic Calendar...`);
     const client = getClient(sessionId);
-    const baseUrl = getBaseUrl(getCampus(sessionId));
+    const campus = getCampus(sessionId);
+    const baseUrl = getBaseUrl(campus);
     
-    // Step 1: Navigate to calendar preview page
+    // FIX: Dynamic Semester ID
+    // FIX: Dynamic Semester ID
+const currentSemId = semesterId || (campus === 'chennai' ? 'CH20252605' : 'VL20252605');
+    
     await client.post(
       `${baseUrl}/vtop/academics/common/CalendarPreview`,
       new URLSearchParams({
@@ -1643,13 +1574,12 @@ async function getAcademicCalendar(authData, session, sessionId, semesterId = 'V
     
     await new Promise(resolve => setTimeout(resolve, 500));
     
-    // Step 2: Get dates for semester
     await client.post(
       `${baseUrl}/vtop/getDateForSemesterPreview`,
       new URLSearchParams({
         _csrf: authData.csrfToken,
         paramReturnId: 'getDateForSemesterPreview',
-        semSubId: semesterId,
+        semSubId: currentSemId,
         authorizedID: authData.authorizedID
       }),
       {
@@ -1663,13 +1593,12 @@ async function getAcademicCalendar(authData, session, sessionId, semesterId = 'V
     
     await new Promise(resolve => setTimeout(resolve, 500));
     
-    // Step 3: Get class group list
     await client.post(
       `${baseUrl}/vtop/getListForSemester`,
       new URLSearchParams({
         _csrf: authData.csrfToken,
         paramReturnId: 'getListForSemester',
-        semSubId: semesterId,
+        semSubId: currentSemId,
         classGroupId: 'ALL',
         authorizedID: authData.authorizedID
       }),
@@ -1684,7 +1613,6 @@ async function getAcademicCalendar(authData, session, sessionId, semesterId = 'V
     
     await new Promise(resolve => setTimeout(resolve, 500));
     
-    // Step 4: Fetch calendar for each month - ALL uses 'ALL' classGroup for general semester events
     const months = [
       { name: 'DECEMBER', date: '01-DEC-2025', classGroup: 'ALL' },
       { name: 'JANUARY', date: '01-JAN-2026', classGroup: 'ALL' },
@@ -1704,7 +1632,7 @@ async function getAcademicCalendar(authData, session, sessionId, semesterId = 'V
           new URLSearchParams({
             _csrf: authData.csrfToken,
             calDate: month.date,
-            semSubId: semesterId,
+            semSubId: currentSemId,
             classGroupId: month.classGroup,
             authorizedID: authData.authorizedID
           }),
@@ -1720,26 +1648,20 @@ async function getAcademicCalendar(authData, session, sessionId, semesterId = 'V
         const $ = cheerio.load(res.data);
         const events = [];
         
-        // Parse calendar table
         $('table.calendar-table tbody tr').each((i, row) => {
-          // Skip header row
           if ($(row).find('th').length > 0) return;
           
           $(row).find('td').each((j, cell) => {
-            // Get the day number (first span in the cell)
             const daySpan = $(cell).find('span').first();
             const day = daySpan.text().trim();
             
             if (!day || isNaN(parseInt(day))) return;
             
-            // Get all spans with color: green (instructional days)
             const greenSpans = $(cell).find('span[style*="color: green"], span[style*="color:green"]');
             
             if (greenSpans.length > 0) {
               greenSpans.each((k, eventSpan) => {
                 const eventText = $(eventSpan).text().trim();
-                
-                // Get the next span (usually has red/pink color for notes)
                 const nextSpan = $(eventSpan).next('span[style*="color"]');
                 const eventNote = nextSpan.text().trim();
                 
@@ -1753,17 +1675,14 @@ async function getAcademicCalendar(authData, session, sessionId, semesterId = 'V
               });
             }
             
-            // Also check for other colored spans (holidays, non-instructional days, etc.)
             const otherSpans = $(cell).find('span[style*="color"]').not('[style*="color: green"]').not('[style*="color:green"]').not('[style*="color: #000"]').not('[style*="color:#000"]');
             
             if (otherSpans.length > 0) {
               otherSpans.each((k, eventSpan) => {
                 const eventText = $(eventSpan).text().trim();
                 
-                // Skip if it's the day number or already processed
                 if (eventText === day || !eventText) return;
                 
-                // Check if this is not already added
                 const alreadyExists = events.some(e => e.day === parseInt(day) && e.event === eventText);
                 
                 if (!alreadyExists && eventText.length > 3) {
@@ -1778,12 +1697,8 @@ async function getAcademicCalendar(authData, session, sessionId, semesterId = 'V
           });
         });
         
-        console.log(`[${sessionId}] ${month.name}: ${events.length} events found`);
-        
-        // Sort events by day
         events.sort((a, b) => a.day - b.day);
         calendar[month.name] = events;
-        
         await new Promise(resolve => setTimeout(resolve, 300));
         
       } catch (error) {
@@ -1792,7 +1707,6 @@ async function getAcademicCalendar(authData, session, sessionId, semesterId = 'V
       }
     }
     
-    // Calculate summary statistics
     let totalInstructionalDays = 0;
     let totalNonInstructionalDays = 0;
     let totalHolidays = 0;
@@ -1854,7 +1768,6 @@ async function getLeaveStatus(authData, session, sessionId) {
     const client = getClient(sessionId);
     const baseUrl = getBaseUrl(getCampus(sessionId));
     
-    // Step 1: Navigate to leave section
     await client.post(
       `${baseUrl}/vtop/hostels/student/leave/1`,
       new URLSearchParams({
@@ -1873,7 +1786,6 @@ async function getLeaveStatus(authData, session, sessionId) {
     
     await new Promise(resolve => setTimeout(resolve, 500));
     
-    // Step 2: Fetch leave status
     const res = await client.post(
       `${baseUrl}/vtop/hostels/student/leave/4`,
       new URLSearchParams({
@@ -1926,6 +1838,7 @@ async function getLeaveStatus(authData, session, sessionId) {
     throw error;
   }
 }
+
 async function getFacultyDetailsByEmpId(authData, session, sessionId, empId) {
   try {
     console.log(`[${sessionId}] Fetching Faculty Details for empId: ${empId}`);
@@ -1964,7 +1877,6 @@ async function getFacultyDetailsByEmpId(authData, session, sessionId, empId) {
       }
     });
     
-    // Extract open hours
     const openHours = [];
     $('table.table-bordered').last().find('tbody tr').each((i, row) => {
       const cells = $(row).find('td');
@@ -1982,13 +1894,13 @@ async function getFacultyDetailsByEmpId(authData, session, sessionId, empId) {
       openHours
     };
     
-    console.log(`[${sessionId}] Faculty details fetched`);
     return facultyData;
   } catch (error) {
     console.error(`[${sessionId}] Faculty Details fetch error:`, error.message);
     throw error;
   }
 }
+
 module.exports = {
   getCGPA,
   getAttendance,
@@ -2004,7 +1916,7 @@ module.exports = {
   getGradeHistory,
   getCounsellingRank,
   getFacultyInfo,
-   getFacultyDetailsByEmpId,
+  getFacultyDetailsByEmpId,
   getAcademicCalendar,
   getLeaveStatus
 };
