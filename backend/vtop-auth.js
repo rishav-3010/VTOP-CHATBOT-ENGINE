@@ -87,7 +87,7 @@ async function loginToVTOP(username, password, sessionId, campus = 'vellore') {
       
       while (!captchaBuffer && attempts++ < 10) {
         const $ = cheerio.load(setupHtml);
-        const src = $('img.form-control.img-fluid.bg-light.border-0').attr('src');
+        const src = $('img[src^="data:image"]').attr('src');
         
         if (src?.startsWith('data:image')) {
           captchaBuffer = Buffer.from(src.split(',')[1], 'base64');

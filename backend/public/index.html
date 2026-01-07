@@ -387,7 +387,10 @@
 
                                 // VTOP Login Button
                                 React.createElement('button', {
-                                    onClick: () => setAuthMode('custom'),
+                                    onClick: () => {
+                                        setAuthMode('custom');
+                                        localStorage.removeItem('redirectToHub');
+                                    },
                                     className: "w-full p-4 border-2 border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all duration-200 text-left group"
                                 }, [
                                     React.createElement('div', { className: "flex items-center space-x-3" }, [
@@ -397,6 +400,25 @@
                                         React.createElement('div', { className: "flex-1" }, [
                                             React.createElement('h3', { className: "font-semibold text-gray-900 mb-1" }, "Use My VTOP Account"),
                                             React.createElement('p', { className: "text-sm text-gray-600" }, "VIT students can use their own credentials to access their real academic data")
+                                        ])
+                                    ])
+                                ]),
+
+                                // Direct Data Hub Button
+                                React.createElement('button', {
+                                    onClick: () => {
+                                        setAuthMode('custom');
+                                        localStorage.setItem('redirectToHub', 'true');
+                                    },
+                                    className: "w-full p-4 border-2 border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all duration-200 text-left group"
+                                }, [
+                                    React.createElement('div', { className: "flex items-center space-x-3" }, [
+                                        React.createElement('div', { 
+                                            className: "w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center group-hover:bg-indigo-200 transition-colors"
+                                        }, React.createElement(GraduationCap, { className: "w-6 h-6 text-indigo-600" })),
+                                        React.createElement('div', { className: "flex-1" }, [
+                                            React.createElement('h3', { className: "font-semibold text-gray-900 mb-1" }, "Direct Data Hub"),
+                                            React.createElement('p', { className: "text-sm text-gray-600" }, "Instant access to all your VTOP data without AI chat - perfect for quick lookups")
                                         ])
                                     ])
                                 ]),
@@ -415,25 +437,7 @@
                                             React.createElement('p', { className: "text-sm text-gray-600" }, "Access past exam papers from VIT courses")
                                         ])
                                     ])
-                                ]),
-                                // Replace your Direct Hub button with this:
-React.createElement('button', {
-    onClick: () => {
-    setAuthMode('custom');
-    localStorage.setItem('redirectToHub', 'true');
-}, // Changed from window.location.href
-    className: "w-full p-4 border-2 border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all duration-200 text-left group"
-}, [
-    React.createElement('div', { className: "flex items-center space-x-3" }, [
-        React.createElement('div', { 
-            className: "w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center group-hover:bg-indigo-200 transition-colors"
-        }, React.createElement(GraduationCap, { className: "w-6 h-6 text-indigo-600" })),
-        React.createElement('div', { className: "flex-1" }, [
-            React.createElement('h3', { className: "font-semibold text-gray-900 mb-1" }, "Direct Data Hub"),
-            React.createElement('p', { className: "text-sm text-gray-600" }, "Instant access to all your VTOP data without AI chat - perfect for quick lookups")
-        ])
-    ])
-])
+                                ])
                             ])
                         ])
                     ])
@@ -553,7 +557,10 @@ React.createElement('button', {
                             React.createElement('div', { className: "flex space-x-3", key: 'buttons' }, [
                                 React.createElement('button', {
                                     type: 'button',
-                                    onClick: () => setAuthMode(null),
+                                    onClick: () => {
+                                        setAuthMode(null);
+                                        localStorage.removeItem('redirectToHub');
+                                    },
                                     className: "flex-1 py-3 px-4 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50",
                                     disabled: isLoading
                                 }, "Back"),
@@ -587,8 +594,20 @@ React.createElement('button', {
             const [authMode, setAuthMode] = useState(null);
             const messagesEndRef = useRef(null);
 
+            // Helper to generate secure ID
+            const generateSessionId = () => {
+                if (window.crypto && window.crypto.randomUUID) {
+                    return window.crypto.randomUUID();
+                }
+                // Fallback for older browsers
+                return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                    return v.toString(16);
+                });
+            };
+
             useEffect(() => {
-                const sid = localStorage.getItem('sessionId') || Math.random().toString(36).substring(2, 15);
+                const sid = localStorage.getItem('sessionId') || generateSessionId();
                 localStorage.setItem('sessionId', sid);
                 setSessionId(sid);
             }, []);
@@ -678,6 +697,13 @@ const handleLogin = async (loginData) => {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ sessionId })
                     });
+                    
+                    // SECURITY FIX: Generate new session ID on logout
+                    // This prevents the next user on the same PC from reusing the old session
+                    const newSid = generateSessionId();
+                    localStorage.setItem('sessionId', newSid);
+                    setSessionId(newSid);
+
                     setIsLoggedIn(false);
                     setIsDemo(false);
                     setLoginStatus('idle');
