@@ -1,3 +1,4 @@
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -36,6 +37,90 @@ app.use(express.static(path.join(__dirname, 'public')));
 const demoUsername = process.env.VTOP_USERNAME;
 const demoPassword = process.env.VTOP_PASSWORD;
 
+// --- Helper for Global Key Rotation ---
+// Ensure we have keys; if only GEMINI_API_KEY is present, use that.
+let keysSource = process.env.GEMINI_KEYS || process.env.GEMINI_API_KEY || "";
+
+const GEMINI_KEYS = keysSource ? keysSource.split(',').map(k => k.trim()).filter(k => k.length > 0) : [];
+
+if (GEMINI_KEYS.length === 0) {
+    console.warn("⚠️ No GEMINI_KEYS or GEMINI_API_KEY found in environment variables.");
+} else {
+    console.log(`✅ Loaded ${GEMINI_KEYS.length} Gemini API keys.`);
+}
+
+// Separate rotation indices for each model tier (Round-Robin)
+let indexLite = 0;
+let indexFlash = 0;
+
+// Blocked keys are now stored as strings: "KEY_VALUE::MODEL_NAME"
+const blockedKeys = new Set();
+const MODELS = {
+    LITE: "gemini-2.5-flash-lite",
+    FLASH: "gemini-2.5-flash"
+};
+
+function getBestSessionConfig() {
+    if (GEMINI_KEYS.length === 0) {
+        if (process.env.GEMINI_API_KEY) return { key: process.env.GEMINI_API_KEY, model: MODELS.LITE };
+        return null;
+    }
+
+    // TIER 1: Try to find a valid key for FLASH LITE
+    for (let i = 0; i < GEMINI_KEYS.length; i++) {
+        let idx = (indexLite + i) % GEMINI_KEYS.length;
+        let key = GEMINI_KEYS[idx];
+        let blockTag = `${key}::${MODELS.LITE}`;
+
+        if (!blockedKeys.has(blockTag)) {
+            indexLite = (idx + 1) % GEMINI_KEYS.length; // Rotate for next user
+            return { key: key, model: MODELS.LITE };
+        }
+    }
+
+    // TIER 2: If all LITE keys are blocked, try FLASH (Standard)
+    // Note: Quotas are separate, so a key blocked on Lite might work on Flash
+    for (let i = 0; i < GEMINI_KEYS.length; i++) {
+        let idx = (indexFlash + i) % GEMINI_KEYS.length;
+        let key = GEMINI_KEYS[idx];
+        let blockTag = `${key}::${MODELS.FLASH}`;
+
+        if (!blockedKeys.has(blockTag)) {
+            indexFlash = (idx + 1) % GEMINI_KEYS.length; // Rotate for next user
+            return { key: key, model: MODELS.FLASH };
+        }
+    }
+
+    console.warn("⚠️ ALL API KEYS EXHAUSTED on BOTH tiers.");
+    return null; // Total system failure (All keys on all models are dead)
+}
+
+function blockKey(key, model, errorMsg = "") {
+    if (!key || !model) return;
+    
+    // Create unique tag for Key + Model combo
+    const blockTag = `${key}::${model}`;
+    blockedKeys.add(blockTag);
+
+    // Check blockage type
+    const isDailyLimit = errorMsg && (
+        errorMsg.toLowerCase().includes("day") || 
+        errorMsg.toLowerCase().includes("daily") ||
+        errorMsg.includes("GenerateRequestsPerDay")
+    );
+                         
+    const duration = isDailyLimit ? 24 * 60 * 60 * 1000 : 60000; 
+    const type = isDailyLimit ? "DAILY LIMIT (24h)" : "RPM LIMIT (1m)";
+
+    console.warn(`⛔ Blocked Key on [${model}] due to ${type}.`);
+    
+    setTimeout(() => {
+        blockedKeys.delete(blockTag);
+        console.log(`🟢 Key unblocked for [${model}]`);
+    }, duration);
+}
+// --------------------------------------
+
 const sessions = {}; // Store sessions separately
 const MAX_HISTORY = 5; // Keep last 5 messages for context
 
@@ -71,10 +156,18 @@ function getSession(sessionId) {
 }
 
 // Intent recognition - NOW RETURNS ARRAY OF INTENTS
-async function recognizeIntent(message, session) {
+async function recognizeIntent(message, session, retryCount = 0) {
   const { GoogleGenerativeAI } = require("@google/generative-ai");
-  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+  
+  const config = getBestSessionConfig();
+  if (!config) {
+     console.error("❌ All API keys exhausted (Both Tiers). Returning general intent.");
+     return ['general'];
+  }
+  
+  const { key, model: modelName } = config;
+  const genAI = new GoogleGenerativeAI(key);
+  const model = genAI.getGenerativeModel({ model: modelName });
   
   const recentHistory = session.conversationHistory.map(msg => ({
     role: msg.role,
@@ -149,16 +242,43 @@ Examples:
     
     return intents.length > 0 ? intents : ['general'];
   } catch (error) {
-    console.error('Error in intent recognition:', error);
+    if (error.status === 429 || error.message?.includes('429') || error.message?.includes('quota')) {
+       const isDaily = error.message?.toLowerCase().includes("daily") || error.message?.includes("GenerateRequestsPerDay");
+       const type = isDaily ? "DAILY LIMIT" : "RPM LIMIT";
+       
+       // Only log full error if it's NOT a standard 429 (to reduce spam)
+       if (!isDaily) console.warn(`⚠️ ${type} (429) during intent recognition on [${modelName}]. Rotating...`);
+
+       blockKey(key, modelName, error.message); // Block specific Key+Model combo
+
+       if (retryCount < GEMINI_KEYS.length * 2) {
+         return recognizeIntent(message, session, retryCount + 1); 
+       }
+       console.warn("⚠️ ALL API KEYS EXHAUSTED for recognizeIntent - returning general intent.");
+    } else if (error.message?.includes('503') || error.message?.includes('overloaded')) {
+      console.warn('Model overloaded (503) during intent recognition, rotating key...');
+       if (retryCount < GEMINI_KEYS.length) {
+         return recognizeIntent(message, session, retryCount + 1); 
+       }
+    } else {
+      console.error('Error in intent recognition:', error);
+    }
     return ['general'];
   }
 }
 
 // Response generation using AI
-async function generateResponse(intent, data, originalMessage, session) {
+async function generateResponse(intent, data, originalMessage, session, retryCount = 0) {
   const { GoogleGenerativeAI } = require("@google/generative-ai");
-  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+  
+  const config = getBestSessionConfig();
+  if (!config) {
+     return "I'm having trouble with my API keys right now (All keys exhausted/blocked). Please tell the developer.";
+  }
+  
+  const { key, model: modelName } = config;
+  const genAI = new GoogleGenerativeAI(key);
+  const model = genAI.getGenerativeModel({ model: modelName });
   
   const recentHistory = session.conversationHistory.map(msg => ({
     role: msg.role,
@@ -189,22 +309,10 @@ async function generateResponse(intent, data, originalMessage, session) {
     | Course | Attended/Total | Percentage | 75% Alert | Status |
     
     For the "75% Alert" column, use the 'alertMessage' field from the data.
-    For the "Status" column, use emojis based on 'alertStatus':
-    - 'danger' (below 75%): 🔴 (red circle)
-    - 'caution' (74.01%-74.99%): ⚠️ (warning)
-    - 'safe' (above 75%): ✅ (green check)
-    
-    After the table, add an Analysis section with:
+        
+    After the table, add an Analysis section(keep it super short) with:
     - **Overall Summary**: How many courses are safe, in caution zone, or in danger
     - **⚠️ Courses Needing Attention** (below 75%): List them with how many classes needed
-    - **🔴 Critical Risk**: Any courses with debar status or very low attendance
-    - **✅ Safe Courses**: Mention courses above 75% and how many can be skipped
-    
-    Add a footer note:
-    > **Note**: Color coding:
-    > - ✅ Green: Attendance > 75%
-    > - ⚠️ Orange: Attendance 74.01% - 74.99% (Be cautious)
-    > - 🔴 Red: Attendance < 75%
     
     Use markdown formatting (bold, emphasis) for important points.
     IMP: If user is asking for particular subject attendance then show only that subject attendance not all subjects.
@@ -234,11 +342,6 @@ async function generateResponse(intent, data, originalMessage, session) {
     - Shows "Due today!" if due today
     - Shows "X days left" if upcoming
     
-    Then add a Summary section with:
-    - Total assignments across all courses
-    - ⚠️ Overdue assignments (if any)
-    - 🔥 Urgent deadlines (within 3-7 days)
-    - Course with most assignments
     
     Use emojis and markdown formatting for emphasis on urgent items.
   `;
@@ -267,10 +370,6 @@ async function generateResponse(intent, data, originalMessage, session) {
     - Type: Theory/Lab/STS
     - Status: ✅ Safe / 🔴 Need X marks in FAT to pass
     
-    Then add overall Analysis:
-    - Best performing courses (highest weightage %)
-    - Courses needing attention (with passing requirements if applicable)
-    - Recommendations
     
     Use markdown formatting and emojis for visual appeal.
     IMP: Sometimes dont ask more than the user asked for example if user is asking for only IoT marks then show only IoT marks not all.
@@ -336,9 +435,7 @@ async function generateResponse(intent, data, originalMessage, session) {
     | 08:00 - 09:00 AM | CSE1001 - Problem Solving | AB1-G03 | A1 |
     | ... | ... | ... | ... |
     
-    After all days, add a Course Summary section with:
-    - Total classes per week
-    - Any observations (like back-to-back classes, long gaps, etc.)
+    
     
     Use emojis to make it visually appealing:
     - 🕐 for time-related info
@@ -519,7 +616,7 @@ case 'getfacultyinfo':
     
     For each month (July to November):
     ### 📅 MONTH 2025
-    Show events with appropriate emojis:
+    if user asked to show all then Show events with appropriate emojis:
     - 🎯 for First Instructional Day
     - 📚 for Instructional Days
     - 🏖️ for Holidays
@@ -532,14 +629,15 @@ case 'getfacultyinfo':
     
     Format: Date: Event description
     
-    After all months, add a Summary section with:
+    no nned to show this if user hasnt asked anything specific to this but if he asked in general like summary of calendar etc then u show him this
+    "After all months, add a Summary section with:
     - 📊 Total Events
     - 📚 Instructional Days
     - 🚫 Non-Instructional Days
     - 🏖️ Holidays
     - 📝 Exam Days
     - 📅 Months Covered
-    
+    "
     Use markdown formatting for clarity and visual appeal.
   `;
   break;
@@ -616,15 +714,41 @@ case 'getfacultyinfo':
     });
     return result.response.text().trim();
   } catch (error) {
-    console.error('Error generating response:', error);
+    if (error.status === 429 || error.message?.includes('429') || error.message?.includes('quota')) {
+       const isDaily = error.message?.toLowerCase().includes("daily") || error.message?.includes("GenerateRequestsPerDay");
+       const type = isDaily ? "DAILY LIMIT" : "RPM LIMIT";
+
+       if (!isDaily) console.warn(`⚠️ ${type} (429) during response generation on [${modelName}]. Rotating...`);
+
+       blockKey(key, modelName, error.message); 
+       if (retryCount < GEMINI_KEYS.length * 2) {
+         return generateResponse(intent, data, originalMessage, session, retryCount + 1); 
+       }
+       return "I've hit the daily usage limit for all available API keys. Please try again later.";
+    } else if (error.message?.includes('503') || error.message?.includes('overloaded')) {
+       console.warn('Model overloaded (503) during response generation, rotating key...');
+       if (retryCount < GEMINI_KEYS.length) {
+         return generateResponse(intent, data, originalMessage, session, retryCount + 1); 
+       }
+      return "The AI model is currently overloaded with too many requests. Please try again in a moment.";
+    } else {
+      console.error('Error generating response:', error);
+    }
     return "I'm having trouble generating a response right now. Please try again.";
   }
 }
 // Generate response with multiple data sources
-async function generateResponseMulti(intents, allData, originalMessage, session) {
+async function generateResponseMulti(intents, allData, originalMessage, session, retryCount = 0) {
   const { GoogleGenerativeAI } = require("@google/generative-ai");
-  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+  
+  const config = getBestSessionConfig();
+  if (!config) {
+     return "I'm having trouble with my API keys right now (All keys exhausted/blocked). Please tell the developer.";
+  }
+  
+  const { key, model: modelName } = config;
+  const genAI = new GoogleGenerativeAI(key);
+  const model = genAI.getGenerativeModel({ model: modelName });
   
   const recentHistory = session.conversationHistory.map(msg => ({
     role: msg.role,
@@ -650,13 +774,13 @@ async function generateResponseMulti(intents, allData, originalMessage, session)
   // Assignments
 if (allData.assignments && intents.includes('getassignments')) {
   dataContext += `\nAssignments Data: ${JSON.stringify(allData.assignments, null, 2)}`;
-  promptSections.push(`For Assignments: Create SEPARATE tables for each course. Format: ### Course Name (Code), then table with columns: | Assignment | Due Date | Days Left |. Calculate days from today (Oct 21, 2025). Show "X days overdue" if past, "Due today!" if today, "X days left" if upcoming. Then summary with overdue and urgent deadlines (3-7 days).`);
+  promptSections.push(`For Assignments: Create SEPARATE tables for each course. Format: ### Course Name (Code), then table with columns: | Assignment | Due Date | Days Left |. Show "X days overdue" if past, "Due today!" if today, "X days left" if upcoming. Then summary with overdue and urgent deadlines (3-7 days).`);
 }
   
   // Marks
 if (allData.marks && intents.includes('getmarks')) {
   dataContext += `\nMarks Data: ${JSON.stringify(allData.marks, null, 2)}`;
-  promptSections.push(`For Marks: Create SEPARATE tables for each subject. Format: ### Course Name (Code), then table with columns: | Assessment | Scored | Maximum | Weightage | Weightage% |. Add course total after each table. Then overall analysis with best/worst performing courses and recommendations.`);
+  promptSections.push(`For Marks: Create SEPARATE tables for each subject. Format: ### Course Name (Code), then table with columns: | Assessment | Scored | Maximum | Weightage | Weightage% |. Add course total after each table. Then overall analysis in very short`);
 }
   
   // Login History
@@ -728,7 +852,7 @@ if (allData.facultyInfo && intents.includes('getfacultyinfo')) {
 // Academic Calendar
 if (allData.academicCalendar && intents.includes('getacademiccalendar')) {
   dataContext += `\nAcademic Calendar: ${JSON.stringify(allData.academicCalendar, null, 2)}`;
-  promptSections.push(`For Academic Calendar: Show month-wise calendar (July-November) with events using appropriate emojis. Include summary with total events, instructional days, holidays, etc.`);
+  promptSections.push(`For Academic Calendar: Show month-wise calendar (Dec-April) with events using appropriate emojis. Include summary with total events, instructional days, holidays, etc.`);
 }
 
   // Build the final prompt
@@ -759,7 +883,26 @@ IMPORTANT:
     });
     return result.response.text().trim();
   } catch (error) {
-    console.error('Error generating response:', error);
+    if (error.status === 429 || error.message?.includes('429') || error.message?.includes('quota')) {
+       const isDaily = error.message?.toLowerCase().includes("daily") || error.message?.includes("GenerateRequestsPerDay");
+       const type = isDaily ? "DAILY LIMIT" : "RPM LIMIT";
+
+       if (!isDaily) console.warn(`⚠️ ${type} (429) during multi-response generation on [${modelName}]. Rotating...`);
+
+       blockKey(key, modelName, error.message); 
+       if (retryCount < GEMINI_KEYS.length * 2) {
+         return generateResponseMulti(intents, allData, originalMessage, session, retryCount + 1); 
+       }
+       return "I've hit the daily usage limit for all available API keys. Please try again later.";
+    } else if (error.message?.includes('503') || error.message?.includes('overloaded')) {
+       console.warn('Model overloaded (503) during multi-response generation, rotating key...');
+       if (retryCount < GEMINI_KEYS.length) {
+         return generateResponseMulti(intents, allData, originalMessage, session, retryCount + 1); 
+       }
+      return "The AI model is currently overloaded with too many requests. Please try again in a moment.";
+    } else {
+      console.error('Error generating response:', error);
+    }
     return "I'm having trouble generating a response right now. Please try again.";
   }
 }
@@ -770,23 +913,38 @@ app.post('/api/login', async (req, res) => {
     const { username, password, useDemo, sessionId, campus = 'vellore' } = req.body;
     
     let session = getSession(sessionId);
-    if (!session) {
-      sessions[sessionId] = {
-        isLoggedIn: false,
-        conversationHistory: [],
-        currentCredentials: {},
-        cache: {
-          cgpa: { data: null, timestamp: 0 },
-          attendance: { data: null, timestamp: 0 },
-          marks: { data: null, timestamp: 0 },
-          assignments: { data: null, timestamp: 0 },
-          loginHistory: { data: null, timestamp: 0 },
-          examSchedule: { data: null, timestamp: 0 },
-          timetable: { data: null, timestamp: 0 }  
-        }
-      };
-      session = sessions[sessionId];
+    
+    // Always clear old session data on new login attempt
+    // This fixes the issue where refreshing page but using same sessionId (from localStorage)
+    // would keep old cache/credentials if the server wasn't restarted
+    if (session) {
+      delete sessions[sessionId];
     }
+    
+    // Create fresh session
+    sessions[sessionId] = {
+      isLoggedIn: false,
+      conversationHistory: [],
+      currentCredentials: {},
+      cache: {
+        cgpa: { data: null, timestamp: 0 },
+        attendance: { data: null, timestamp: 0 },
+        marks: { data: null, timestamp: 0 },
+        assignments: { data: null, timestamp: 0 },
+        loginHistory: { data: null, timestamp: 0 },
+        examSchedule: { data: null, timestamp: 0 },
+        timetable: { data: null, timestamp: 0 },
+        leaveHistory: { data: null, timestamp: 0 },
+        grades: { data: null, timestamp: 0 },
+        paymentHistory: { data: null, timestamp: 0 },
+        proctorDetails: { data: null, timestamp: 0 },
+        gradeHistory: { data: null, timestamp: 0 },
+        counsellingRank: { data: null, timestamp: 0 },
+        academicCalendar: { data: null, timestamp: 0 },
+        leaveStatus: { data: null, timestamp: 0 }
+      }
+    };
+    session = sessions[sessionId];
     
     let loginUsername, loginPassword;
     
