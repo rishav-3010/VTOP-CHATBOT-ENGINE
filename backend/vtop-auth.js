@@ -133,13 +133,20 @@ async function loginToVTOP(username, password, sessionId, campus = 'vellore') {
       const finalUrl = loginRes.request?.res?.responseUrl || loginRes.config.url;
       
       if (finalUrl.includes('/vtop/login/error')) {
-        console.log(`[${sessionId}] CAPTCHA incorrect (Attempt ${captchaAttempt}/${MAX_CAPTCHA_ATTEMPTS})`);
+        // Check if the HTML contains "Invalid Credentials" text
+        if (loginRes.data && (typeof loginRes.data === 'string') && loginRes.data.includes('Invalid Credentials')) {
+             console.log(`[${sessionId}] VTOP reported Invalid Credentials. Aborting retries.`);
+             return { success: false, error: 'Invalid Credentials' };
+        }
+
+        console.log(`[${sessionId}] CAPTCHA/Login error detected (Attempt ${captchaAttempt}/${MAX_CAPTCHA_ATTEMPTS})`);
+        
         if (captchaAttempt < MAX_CAPTCHA_ATTEMPTS) {
           await new Promise(resolve => setTimeout(resolve, 1000));
           continue;
         } else {
           console.log(`[${sessionId}] Login failed after max attempts`);
-          return false;
+          return { success: false, error: 'Maximum exceeded, possible invalid credentials' };
         }
       }
       
@@ -155,22 +162,22 @@ async function loginToVTOP(username, password, sessionId, campus = 'vellore') {
         
         console.log(`[${sessionId}] Auth data extracted for ${sessionData.authID}`);
         
-        return true;
+        return { success: true };
       } else {
         console.log(`[${sessionId}] Unknown response`);
-        return false;
+        return { success: false, error: 'Unknown response from VTOP' };
       }
       
     } catch (error) {
       console.error(`[${sessionId}] Login error:`, error.message);
       if (captchaAttempt >= MAX_CAPTCHA_ATTEMPTS) {
-        return false;
+        return { success: false, error: 'Login error: ' + error.message };
       }
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
   }
   
-  return false;
+  return { success: false, error: 'Login Timeout' };
 }
 
 async function getAuthData(sessionId) {

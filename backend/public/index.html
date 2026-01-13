@@ -329,7 +329,7 @@
             ]);
         };
 
-        const LoginForm = ({ onLogin, isLoading }) => {
+        const LoginForm = ({ onLogin, isLoading, error }) => {
             const [authMode, setAuthMode] = useState(null); // 'demo' or 'custom' or 'papers'
             const [credentials, setCredentials] = useState({ username: '', password: '', campus: 'vellore' });
             const [showPassword, setShowPassword] = useState(false);
@@ -553,6 +553,17 @@
                                     )
                                 ])
                             ],
+
+                            // Error Display
+                            error && React.createElement('div', { 
+                                className: "bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-600 mb-2 animate-pulse",
+                                key: 'error-msg' 
+                            }, [
+                                React.createElement('div', { className: "flex items-center space-x-2" }, [
+                                    React.createElement('span', { className: "font-bold" }, "⚠️"),
+                                    React.createElement('span', {}, error)
+                                ])
+                            ]),
                             
                             React.createElement('div', { className: "flex space-x-3", key: 'buttons' }, [
                                 React.createElement('button', {
@@ -592,6 +603,7 @@
             const [showLoginForm, setShowLoginForm] = useState(true);
             const [sessionId, setSessionId] = useState(null);
             const [authMode, setAuthMode] = useState(null);
+            const [loginError, setLoginError] = useState(null);
             const messagesEndRef = useRef(null);
 
             // Helper to generate secure ID
@@ -623,6 +635,7 @@
 const handleLogin = async (loginData) => {
     setLoginStatus('logging');
     setIsLoading(true);
+    setLoginError(null);
     
     const welcomeMessage = loginData.useDemo ? 
         '🔐 Connecting to VTOP and fetching live academic data...' :
@@ -671,15 +684,17 @@ const handleLogin = async (loginData) => {
             }]);
         } else {
             setLoginStatus('failed');
+            setLoginError(result.message || 'Login failed. Please check your credentials.');
             setMessages(prev => [...prev, {
                 id: Date.now() + 1,
                 type: 'system',
-                content: '❌ Login failed. Please check your credentials and try again.',
+                content: result.message ? `❌ ${result.message}` : '❌ Login failed. Please check your credentials and try again.',
                 timestamp: new Date()
             }]);
         }
     } catch (error) {
         setLoginStatus('failed');
+        setLoginError('Network error occurred. Please try again.');
         setMessages(prev => [...prev, {
             id: Date.now() + 1,
             type: 'system',
@@ -888,7 +903,8 @@ const handleLogin = async (loginData) => {
 if (showLoginForm) {
                 return React.createElement(LoginForm, { 
                     onLogin: handleLogin, 
-                    isLoading: isLoading 
+                    isLoading: isLoading,
+                    error: loginError
                 });
             }
 

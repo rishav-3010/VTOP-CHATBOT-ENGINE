@@ -25,6 +25,7 @@ const {
 } = require('./vtop-functions');
 const { searchPapers } = require('./papers');
 const { searchCodeChefPapers } = require('./codechef-papers');
+const { initDB, logUserLogin } = require('./db');
 
 
 const app = express();
@@ -204,6 +205,7 @@ IMPORTANT:
 - Subject-specific queries still return the main intent (marks/attendance)
 - "Academic history" or "all grades" = getGradeHistory
 - "Faculty" or "professor" queries = getFacultyInfo
+- "When is CAT1/CAT2/FAT" = getAcademicCalendar (Prefer calendar for general dates as exam schedule might be outdated)
 - Return as comma-separated list
 
 Examples:
@@ -261,7 +263,7 @@ Examples:
          return recognizeIntent(message, session, retryCount + 1); 
        }
     } else {
-      console.error('Error in intent recognition:', error);
+      console.error('Error in intent recognition:', error.message || error);
     }
     return ['general'];
   }
@@ -608,37 +610,28 @@ case 'getfacultyinfo':
   `;
   break;
   case 'getacademiccalendar':
+  const currentDate = new Date().toDateString();
   prompt = `
     The user asked: "${originalMessage}"
+    CURRENT REAL DATE: ${currentDate}
     Here's the academic calendar data: ${JSON.stringify(data, null, 2)}
     
-    Format the calendar month-wise with:
-    
+    IMPORTANT INSTRUCTIONS:
+    1. **Context Awareness**: Use CURRENT DATE (${currentDate}) to answer relative questions (e.g., "next working saturday", "upcoming holidays", "how many days left").
+    2. **Smart Filtering**: 
+       - If user asks for specific events (e.g., "When is Pongal?", "Holidays in Jan"), show ONLY those specific dates. DO NOT show the whole calendar.
+       - If user asks for "next working Saturday", find the next 'Instructional Day' falling on a Saturday AFTER ${currentDate}.
+    3. **Full Calendar**: Only show the full month-wise view if explicitly asked (e.g., "show academic calendar", "full schedule").
+
+    Format for Full Calendar (if requested):
     For each month (July to November):
-    ### 📅 MONTH 2025
-    if user asked to show all then Show events with appropriate emojis:
-    - 🎯 for First Instructional Day
-    - 📚 for Instructional Days
-    - 🏖️ for Holidays
-    - 📝 for Exams (CAT/FAT)
-    - 📋 for Registration
-    - 🌴 for Vacation/Break
-    - 🎉 for Festivals
-    - 🚫 for Non-instructional/No class days
-    - 📌 for other events
+    ### 📅 MONTH YEAR
+    - Show events with emojis: 🎯 Start, 📚 Instructional, 🏖️ Holiday, 📝 Exam
     
-    Format: Date: Event description
+    Format for Specific/Relative Queries:
+    - 📅 **Event Name**: Date - Note (if any)
     
-    no nned to show this if user hasnt asked anything specific to this but if he asked in general like summary of calendar etc then u show him this
-    "After all months, add a Summary section with:
-    - 📊 Total Events
-    - 📚 Instructional Days
-    - 🚫 Non-Instructional Days
-    - 🏖️ Holidays
-    - 📝 Exam Days
-    - 📅 Months Covered
-    "
-    Use markdown formatting for clarity and visual appeal.
+    Use markdown formatting.
   `;
   break;
   case 'getleavestatus':
@@ -724,7 +717,7 @@ case 'getfacultyinfo':
        if (retryCount < GEMINI_KEYS.length * 2) {
          return generateResponse(intent, data, originalMessage, session, retryCount + 1); 
        }
-       return "I've hit the daily usage limit for all available API keys. Please try again later.";
+       return "My daily request limit has been reached (429). Please try again later.";
     } else if (error.message?.includes('503') || error.message?.includes('overloaded')) {
        console.warn('Model overloaded (503) during response generation, rotating key...');
        if (retryCount < GEMINI_KEYS.length) {
@@ -732,7 +725,7 @@ case 'getfacultyinfo':
        }
       return "The AI model is currently overloaded with too many requests. Please try again in a moment.";
     } else {
-      console.error('Error generating response:', error);
+      console.error('Error generating response:', error.message || error);
     }
     return "I'm having trouble generating a response right now. Please try again.";
   }
@@ -851,8 +844,9 @@ if (allData.facultyInfo && intents.includes('getfacultyinfo')) {
 
 // Academic Calendar
 if (allData.academicCalendar && intents.includes('getacademiccalendar')) {
-  dataContext += `\nAcademic Calendar: ${JSON.stringify(allData.academicCalendar, null, 2)}`;
-  promptSections.push(`For Academic Calendar: Show month-wise calendar (Dec-April) with events using appropriate emojis. Include summary with total events, instructional days, holidays, etc.`);
+  const currentDate = new Date().toDateString();
+  dataContext += `\nAcademic Calendar: ${JSON.stringify(allData.academicCalendar, null, 2)}\nCURRENT DATE: ${currentDate}`;
+  promptSections.push(`For Academic Calendar: Use CURRENT DATE (${currentDate}) for relative queries ("next Saturday"). Only show specific events if asked (e.g., "Pongal only"). If full calendar requested, show month-wise summary.`);
 }
 
   // Build the final prompt
@@ -893,7 +887,7 @@ IMPORTANT:
        if (retryCount < GEMINI_KEYS.length * 2) {
          return generateResponseMulti(intents, allData, originalMessage, session, retryCount + 1); 
        }
-       return "I've hit the daily usage limit for all available API keys. Please try again later.";
+       return "My daily request limit has been reached (429). Please try again later.";
     } else if (error.message?.includes('503') || error.message?.includes('overloaded')) {
        console.warn('Model overloaded (503) during multi-response generation, rotating key...');
        if (retryCount < GEMINI_KEYS.length) {
@@ -901,7 +895,7 @@ IMPORTANT:
        }
       return "The AI model is currently overloaded with too many requests. Please try again in a moment.";
     } else {
-      console.error('Error generating response:', error);
+      console.error('Error generating response:', error.message || error);
     }
     return "I'm having trouble generating a response right now. Please try again.";
   }
@@ -975,10 +969,19 @@ app.post('/api/login', async (req, res) => {
     }
 
     // Pass sessionId and campus to loginToVTOP
-    const success = await loginToVTOP(loginUsername, loginPassword, sessionId, campus);
+    const result = await loginToVTOP(loginUsername, loginPassword, sessionId, campus);
     
-    if (success) {
+    // Login result is now an object { success: boolean, error?: string }
+    if (result && result.success) {
       session.isLoggedIn = true;
+
+      // Log to Database (Async, don't wait for response)
+      getAuthData(sessionId).then(authData => {
+        if (authData && authData.authorizedID) {
+          logUserLogin(authData.authorizedID, sessionId, campus);
+        }
+      });
+
       res.json({ 
         success: true, 
         isDemo: session.currentCredentials.isDemo,
@@ -988,11 +991,11 @@ app.post('/api/login', async (req, res) => {
     } else {
       res.json({ 
         success: false, 
-        message: 'Login failed'
+        message: result.error || 'Login failed. Please check your credentials.'
       });
     }
   } catch (error) {
-    console.error('Login error:', error);
+    console.error('Login error:', error.message || error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -1330,7 +1333,7 @@ case 'getacademiccalendar':
     res.json({ response, data: allData });
 
   } catch (error) {
-    console.error(`[${sessionId}] Chat error:`, error);
+    console.error(`[${sessionId}] Chat error:`, error.message || error);
     res.status(500).json({ 
       response: "I encountered an error processing your request. Please try again.",
       data: null 
@@ -1502,7 +1505,7 @@ app.post('/api/papers/search', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Papers search error:', error);
+    console.error('Papers search error:', error.message || error);
     res.status(500).json({
       success: false,
       error: {
@@ -1614,7 +1617,7 @@ app.post('/api/direct-data', async (req, res) => {
     });
 
   } catch (error) {
-    console.error(`[${req.body.sessionId}] Direct data error:`, error);
+    console.error(`[${req.body.sessionId}] Direct data error:`, error.message || error);
     res.json({ 
       success: false, 
       error: error.message 
@@ -1622,12 +1625,10 @@ app.post('/api/direct-data', async (req, res) => {
   }
 });
 
+// Initialize Database
+initDB();
+
 app.listen(PORT, () => {
   console.log(`🚀 VTOP Server running on port ${PORT}`);
   console.log(`📱 Frontend: http://localhost:${PORT}`);
 });
-
-       
-    
-
-    
