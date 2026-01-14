@@ -269,6 +269,29 @@ Examples:
   }
 }
 
+const VTOP_SYSTEM_INSTRUCTION = `
+You are a VTOP chatbot assistant for VIT students.
+
+You can help with:
+- 📊 View CGPA and semester reports
+- 📝 Check marks and identify best/worst performing subjects
+- 📅 Monitor attendance and debarment risk
+- 📋 Track assignment deadlines
+- 📆 View exam schedules (FAT, CAT1, CAT2)
+- 🕐 Check class timetable and weekly schedule
+- 🏖️ View leave history and approval status
+- 🎓 Check semester grades and GPA
+- 💳 View payment history and fee receipts
+- 👨‍🏫 Get proctor details and contact information
+- 📚 View complete academic grade history
+- 🎯 Check hostel counselling rank and slot
+- 📋 Check current leave status and pending applications
+- 🔍 Search for faculty information and contact details
+- 🔐 View login history and session records
+
+Answer warmly and guide them on what you can help with.
+`;
+
 // Response generation using AI
 async function generateResponse(intent, data, originalMessage, session, retryCount = 0) {
   const { GoogleGenerativeAI } = require("@google/generative-ai");
@@ -280,7 +303,10 @@ async function generateResponse(intent, data, originalMessage, session, retryCou
   
   const { key, model: modelName } = config;
   const genAI = new GoogleGenerativeAI(key);
-  const model = genAI.getGenerativeModel({ model: modelName });
+  const model = genAI.getGenerativeModel({ 
+    model: modelName,
+    systemInstruction: VTOP_SYSTEM_INSTRUCTION
+  });
   
   const recentHistory = session.conversationHistory.map(msg => ({
     role: msg.role,
@@ -656,42 +682,13 @@ case 'getfacultyinfo':
   `;
   break;
     default:
-  // If this is the first message (conversation just started), send context
-  if (session.conversationHistory.length <= 2) {
-    prompt = `
-      You are a VTOP chatbot assistant for VIT students.
-      
-      You can help with:
-      - 📊 View CGPA and semester reports
-      - 📝 Check marks and identify best/worst performing subjects
-      - 📅 Monitor attendance and debarment risk
-      - 📋 Track assignment deadlines
-      - 📆 View exam schedules (FAT, CAT1, CAT2)
-      - 🕐 Check class timetable and weekly schedule
-      - 🏖️ View leave history and approval status
-      - 🎓 Check semester grades and GPA
-      - 💳 View payment history and fee receipts
-      - 👨‍🏫 Get proctor details and contact information
-      - 📚 View complete academic grade history
-      - 🎯 Check hostel counselling rank and slot
-      - 📋 Check current leave status and pending applications
-      - 🔍 Search for faculty information and contact details
-      - 🔐 View login history and session records
-      
-      This is the user's message: "${originalMessage}"
-      
-      Answer warmly and guide them on what you can help with.
-    `;
-  } else {
-    // For subsequent messages, answer with context
-    prompt = `
+      prompt = `
       The user asked: "${originalMessage}"
       
       Based on our conversation, answer their question naturally.
       If they're asking comparative questions like "which subject is worst" or "what needs attention",
       acknowledge that you can fetch that data for them and ask if they'd like you to show it.
     `;
-  }
   break;
   }
 
@@ -741,7 +738,10 @@ async function generateResponseMulti(intents, allData, originalMessage, session,
   
   const { key, model: modelName } = config;
   const genAI = new GoogleGenerativeAI(key);
-  const model = genAI.getGenerativeModel({ model: modelName });
+  const model = genAI.getGenerativeModel({ 
+    model: modelName,
+    systemInstruction: VTOP_SYSTEM_INSTRUCTION
+  });
   
   const recentHistory = session.conversationHistory.map(msg => ({
     role: msg.role,

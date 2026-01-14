@@ -17,7 +17,7 @@
   "author": "Your Name",
   "license": "MIT",
   "dependencies": {
-    "@google/generative-ai": "^0.2.1",
+    "@google/generative-ai": "^0.24.1",
     "axios": "^1.6.0",
     "axios-cookiejar-support": "^5.0.2",
     "canvas": "^3.2.0",
