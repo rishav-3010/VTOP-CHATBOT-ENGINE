@@ -20,16 +20,27 @@ const initDB = async () => {
             await client.query(`
                 CREATE TABLE IF NOT EXISTS users (
                     auth_id VARCHAR(50) PRIMARY KEY,
+                    campus VARCHAR(20),
                     first_seen TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                     last_seen TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                 );
+            `);
+
+            // Add campus column to users if it doesn't exist
+            await client.query(`
+                DO $$ 
+                BEGIN 
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='campus') THEN 
+                        ALTER TABLE users ADD COLUMN campus VARCHAR(20); 
+                    END IF; 
+                END $$;
             `);
 
             // 2. Login Logs Table (History of sessions)
             await client.query(`
                 CREATE TABLE IF NOT EXISTS login_logs (
                     id SERIAL PRIMARY KEY,
-                    auth_id VARCHAR(50) REFERENCES users(auth_id),
+                    auth_id VARCHAR(50) REFERENCES users(auth_id) ON DELETE CASCADE,
                     session_id VARCHAR(100),
                     campus VARCHAR(20),
                     login_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -43,6 +54,22 @@ const initDB = async () => {
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='login_logs' AND column_name='campus') THEN 
                         ALTER TABLE login_logs ADD COLUMN campus VARCHAR(20); 
                     END IF; 
+                END $$;
+            `);
+
+            // Update FK to CASCADE if it's not already (for existing tables)
+            await client.query(`
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.referential_constraints 
+                        WHERE constraint_name = 'login_logs_auth_id_fkey' 
+                        AND delete_rule != 'CASCADE' 
+                    ) THEN
+                        ALTER TABLE login_logs DROP CONSTRAINT login_logs_auth_id_fkey;
+                        ALTER TABLE login_logs ADD CONSTRAINT login_logs_auth_id_fkey 
+                        FOREIGN KEY (auth_id) REFERENCES users(auth_id) ON DELETE CASCADE;
+                    END IF;
                 END $$;
             `);
             
@@ -62,11 +89,11 @@ const logUserLogin = async (authId, sessionId, campus = 'vellore') => {
     try {
         // 1. Ensure user exists (Upsert)
         await pool.query(`
-            INSERT INTO users (auth_id, last_seen)
-            VALUES ($1, CURRENT_TIMESTAMP)
+            INSERT INTO users (auth_id, campus, last_seen)
+            VALUES ($1, $2, CURRENT_TIMESTAMP)
             ON CONFLICT (auth_id) 
-            DO UPDATE SET last_seen = CURRENT_TIMESTAMP;
-        `, [authId]);
+            DO UPDATE SET last_seen = CURRENT_TIMESTAMP, campus = $2;
+        `, [authId, campus]);
 
         // 2. Log the specific session event
         await pool.query(`
