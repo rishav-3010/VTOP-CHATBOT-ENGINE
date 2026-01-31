@@ -63,6 +63,15 @@
   border-radius: 4px;
   font-family: monospace;
 }
+.markdown-content a {
+  color: #2563eb;
+  text-decoration: underline;
+  transition: color 0.2s ease;
+}
+.markdown-content a:hover {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
         body {
             margin: 0;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
@@ -456,7 +465,7 @@
                             ),
                             React.createElement('p', { className: "text-gray-600" }, 
                                 authMode === 'demo' ? 
-                                "To demonstrate the assistant's real-time capabilities without requiring personal login credentials, this mode uses a pre-authenticated test account. You will be viewing live, live-fetched data directly from the VTOP portal." :
+                                "Demo mode uses hardcoded VTOP credentials to fetch and display real student data. This is actual live data from VTOP, not a database - perfect for recruiters and visitors to explore features." :
                                 "Enter your VTOP credentials to access your real data"
                             )
                         ]),

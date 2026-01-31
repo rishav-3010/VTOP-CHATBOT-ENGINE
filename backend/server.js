@@ -21,7 +21,8 @@ const {
   getFacultyInfo,
   getFacultyDetailsByEmpId,
   getAcademicCalendar,
-  getLeaveStatus
+  getLeaveStatus,
+  downloadGradeHistory
 } = require('./vtop-functions');
 const { searchPapers } = require('./papers');
 const { searchCodeChefPapers } = require('./codechef-papers');
@@ -196,6 +197,7 @@ async function recognizeIntent(message, session, retryCount = 0) {
 - getCounsellingRank: Hostel counselling rank, slot, timings
 - getFacultyInfo: Faculty search, contact details, open hours
 - getAcademicCalendar: Academic calendar, holidays, exam dates, instructional days
+- downloadGradeHistory: Generate/Download student grade history PDF
 - general: Greetings, help, unclear requests,tell user about available functions
 
 IMPORTANT:
@@ -219,6 +221,7 @@ Examples:
   * "What's my hostel counselling rank?" → getCounsellingRank
   * "Find faculty named Yokesh" → getFacultyInfo
   * "Show complete academic history" → getGradeHistory
+  * "Download my grade history" → downloadGradeHistory
   User's message: "${message}"
   
   Respond with ONLY the function names, comma-separated. No explanations.
@@ -581,6 +584,9 @@ case 'getgradehistory':
     4. **Recent Courses** (last 5-10 courses):
        Table with: Course | Grade | Credits | Exam Month
     
+    5. **PDF Download**:
+       At the end, add a friendly line like "📄 Want the complete official record? [Download Grade History PDF](/api/downloads/grade-history?sessionId=${session.id})"
+    
     Use markdown formatting extensively.
   `;
   break;
@@ -679,6 +685,18 @@ case 'getfacultyinfo':
     - Any action needed
     
     Use markdown formatting for clarity.
+  `;
+  break;
+  case 'downloadgradehistory':
+  prompt = `
+    The user asked: "${originalMessage}"
+    
+    Respond by providing a direct link to download their Grade History PDF.
+    
+    Use this EXACT Markdown link format:
+    [📄 Download Grade History PDF](/api/downloads/grade-history?sessionId=${session.id})
+    
+    Tell them the file will contain their complete academic performance record.
   `;
   break;
     default:
@@ -1004,6 +1022,9 @@ app.post('/api/chat', async (req, res) => {
   try {
     const { message, sessionId } = req.body;
     const session = getSession(sessionId);
+    
+    // Inject ID for internal use
+    if (session) session.id = sessionId;
 
     if (!session || !session.isLoggedIn) {
       return res.json({ 
@@ -1515,6 +1536,38 @@ app.post('/api/papers/search', async (req, res) => {
       }
     });
   }
+});
+
+// ===== GRADE HISTORY DOWNLOAD ENDPOINT =====
+app.get('/api/downloads/grade-history', async (req, res) => {
+    const { sessionId } = req.query;
+    const session = getSession(sessionId);
+
+    if (!session || !session.isLoggedIn) {
+        return res.status(401).send('Not logged in');
+    }
+
+    try {
+        console.log(`[${sessionId}] Download request received`);
+        const authData = await getAuthData(sessionId);
+        
+        if (!authData || !authData.authorizedID) {
+            console.error(`[${sessionId}] Auth data not available`);
+            return res.status(401).send('Authentication data not available');
+        }
+        
+        console.log(`[${sessionId}] Auth data retrieved for ${authData.authorizedID}`);
+        const dataBuffer = await downloadGradeHistory(authData, session, sessionId);
+        
+        // Return raw PDF buffer
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', 'attachment; filename="Grade_History.pdf"');
+        res.send(dataBuffer);
+
+    } catch (error) {
+        console.error(`[${sessionId}] Error downloading grade history:`, error.message);
+        res.status(500).send('Failed to download grade history');
+    }
 });
 
 // ===== DIRECT DATA ENDPOINT (NO AI PROCESSING) =====

@@ -12,9 +12,9 @@ function getDefaultSemesterId(campus) {
   
   // Update these IDs if the semester changes!
   if (c === 'chennai') {
-    return 'CH20252601'; // Chennai Fall Semester
+    return 'CH20252605'; // Chennai Fall Semester
   }
-  return 'VL20252601';   // Vellore Fall Semester
+  return 'VL20252605';   // Vellore Fall Semester
 }
 
 function isCacheValid(session, key) {
@@ -986,7 +986,7 @@ async function getLeaveHistory(authData, session, sessionId) {
   }
 }
 
-async function getGrades(authData, session, sessionId, semesterId = null) {
+async function getGrades(authData, session, sessionId, semesterId = 'VL20252601') {
   try {
     if (isCacheValid(session, 'grades')) {
       console.log(`[${sessionId}] Cache hit: grades`);
@@ -1901,6 +1901,38 @@ async function getFacultyDetailsByEmpId(authData, session, sessionId, empId) {
   }
 }
 
+async function downloadGradeHistory(authData, session, sessionId) {
+  try {
+    console.log(`[${sessionId}] Downloading Grade History...`);
+    const client = getClient(sessionId);
+    const campus = getCampus(sessionId);
+    const baseUrl = getBaseUrl(campus);
+    
+    const res = await client.post(
+      `${baseUrl}/vtop/examinations/examGradeView/doDownloadStudentHistory`,
+      new URLSearchParams({
+        _csrf: authData.csrfToken,
+        authorizedID: authData.authorizedID,
+        x: new Date().toUTCString()
+      }),
+      {
+        responseType: 'arraybuffer',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Referer': `${baseUrl}/vtop/examinations/examGradeView/StudentGradeHistory`,
+          'X-Requested-With': 'XMLHttpRequest'
+        }
+      }
+    );
+    
+    console.log(`[${sessionId}] Grade History downloaded for ${authData.authorizedID}`);
+    return res.data;
+  } catch (error) {
+    console.error(`[${sessionId}] Grade History download error:`, error.message);
+    throw error;
+  }
+}
+
 module.exports = {
   getCGPA,
   getAttendance,
@@ -1914,6 +1946,7 @@ module.exports = {
   getPaymentHistory,
   getProctorDetails,
   getGradeHistory,
+  downloadGradeHistory,
   getCounsellingRank,
   getFacultyInfo,
   getFacultyDetailsByEmpId,
