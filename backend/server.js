@@ -1019,8 +1019,8 @@ app.post('/api/login', async (req, res) => {
 });
 // ===== CHAT ENDPOINT WITH STREAMING =====
 app.post('/api/chat', async (req, res) => {
-  try {
-    const { message, sessionId } = req.body;
+  const { message, sessionId } = req.body;
+  try {  
     const session = getSession(sessionId);
     
     // Inject ID for internal use
