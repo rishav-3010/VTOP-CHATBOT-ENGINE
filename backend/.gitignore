@@ -1,3 +1,4 @@
 node_modules/
 .env
-mock
+server2.js
+index2.html

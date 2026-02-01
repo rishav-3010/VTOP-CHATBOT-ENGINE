@@ -750,6 +750,7 @@ const handleLogin = async (loginData) => {
                 };
 
                 setMessages(prev => [...prev, userMessage]);
+                const currentInput = inputValue;
                 setInputValue('');
                 setIsLoading(true);
 
@@ -766,21 +767,57 @@ const handleLogin = async (loginData) => {
                     const response = await fetch('/api/chat', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ message: inputValue, sessionId })
+                        body: JSON.stringify({ message: currentInput, sessionId })
                     });
 
-                    const result = await response.json();
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    let botMessageId = Date.now() + 2;
+                    let fullContent = "";
+                    let isFirstChunk = true;
+                    let receivedData = null;
 
+                    // Remove loading message and create placeholder
                     setMessages(prev => {
-                        const filteredMessages = prev.filter(msg => !msg.loading);
-                        return [...filteredMessages, {
-                            id: Date.now() + 2,
+                        const filtered = prev.filter(msg => !msg.loading);
+                        return [...filtered, {
+                            id: botMessageId,
                             type: 'bot',
-                            content: result.response,
-                            data: result.data,
+                            content: '',
                             timestamp: new Date()
                         }];
                     });
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+
+                        const text = decoder.decode(value, { stream: true });
+                        
+                        // Check if first chunk contains DATA JSON
+                        if (isFirstChunk && text.includes('{"type":"DATA"')) {
+                            const lines = text.split('\n\n');
+                            try {
+                                const dataPart = JSON.parse(lines[0]);
+                                receivedData = dataPart.payload;
+                                // Remove the JSON part from text to display
+                                fullContent += lines.slice(1).join('\n\n');
+                            } catch (e) {
+                                fullContent += text;
+                            }
+                            isFirstChunk = false;
+                        } else {
+                            fullContent += text;
+                        }
+
+                        // Update UI with new token in real-time
+                        setMessages(prev => prev.map(msg => 
+                            msg.id === botMessageId 
+                                ? { ...msg, content: fullContent, data: receivedData } 
+                                : msg
+                        ));
+                    }
+
                 } catch (error) {
                     setMessages(prev => {
                         const filteredMessages = prev.filter(msg => !msg.loading);

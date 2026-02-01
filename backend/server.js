@@ -1017,7 +1017,7 @@ app.post('/api/login', async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
-// ===== CHAT ENDPOINT =====
+// ===== CHAT ENDPOINT WITH STREAMING =====
 app.post('/api/chat', async (req, res) => {
   try {
     const { message, sessionId } = req.body;
@@ -1033,6 +1033,10 @@ app.post('/api/chat', async (req, res) => {
       });
     }
 
+    // Set headers for streaming
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Transfer-Encoding', 'chunked');
+
     session.conversationHistory.push({ role: 'user', content: message });
     if (session.conversationHistory.length > MAX_HISTORY) {
       session.conversationHistory.shift();
@@ -1043,7 +1047,6 @@ app.post('/api/chat', async (req, res) => {
     console.log(`[${sessionId}] Recognized intents:`, intents.join(', '));
 
     let allData = {};
-    let response = '';
 
     // Check if we need to fetch multiple data sources
     const needsMultipleData = intents.length > 1 && !intents.includes('general');
@@ -1113,252 +1116,281 @@ case 'getacademiccalendar':
       // Wait for all data to be fetched in parallel
       await Promise.all(promises);
       
-      // Generate comprehensive response with all data
-      response = await generateResponseMulti(intents, allData, message, session);
-      
     } else {
-      // Single intent - use existing logic
+      // Single intent - fetch data
       const intent = intents[0];
+      const authData = await getAuthData(sessionId);
+      
+      try {
+        switch (intent) {
+          case 'getcgpa':
+            allData.cgpa = await getCGPA(authData, session, sessionId);
+            break;
+          case 'getattendance':
+            allData.attendance = await getAttendance(authData, session, sessionId);
+            break;
+          case 'getleavestatus':
+            allData.leaveStatus = await getLeaveStatus(authData, session, sessionId);
+            break;
+          case 'getassignments':
+            allData.assignments = await getAssignments(authData, session, sessionId);
+            break;
+          case 'getmarks':
+            allData.marks = await getMarks(authData, session, sessionId);
+            break;
+          case 'getloginhistory':
+            allData.loginHistory = await getLoginHistory(authData, session, sessionId);
+            break;
+          case 'getexamschedule':
+            allData.examSchedule = await getExamSchedule(authData, session, sessionId);
+            break;
+          case 'gettimetable':
+            allData.timetable = await getTimetable(authData, session, sessionId);
+            break;
+          case 'getleavehistory':
+            allData.leaveHistory = await getLeaveHistory(authData, session, sessionId);
+            break;
+          case 'getgrades':
+            allData.grades = await getGrades(authData, session, sessionId);
+            break;
+          case 'getpaymenthistory':
+            allData.paymentHistory = await getPaymentHistory(authData, session, sessionId);
+            break;
+          case 'getproctordetails':
+            allData.proctorDetails = await getProctorDetails(authData, session, sessionId);
+            break;
+          case 'getgradehistory':
+            allData.gradeHistory = await getGradeHistory(authData, session, sessionId);
+            break;
+          case 'getcounsellingrank':
+            allData.counsellingRank = await getCounsellingRank(authData, session, sessionId);
+            break;
+          case 'getfacultyinfo':
+            let facultyName = message;
+            const phrasesToRemove = [
+              /^show\s+(me\s+)?/gi, /^find\s+(me\s+)?/gi, /^search\s+(for\s+)?/gi,
+              /^get\s+(me\s+)?/gi, /^fetch\s+(me\s+)?/gi, /^tell\s+me\s+about\s+/gi,
+              /^who\s+is\s+/gi, /^give\s+me\s+/gi, /^i\s+want\s+/gi,
+              /^can\s+you\s+(show|find|get|tell)\s+(me\s+)?/gi
+            ];
+            phrasesToRemove.forEach(pattern => { facultyName = facultyName.replace(pattern, ''); });
+            const keywordsToRemove = [
+              /\bfaculty\b/gi, /\bprofessor\b/gi, /\bteacher\b/gi, /\bsir\b/gi,
+              /\bmadam\b/gi, /\bma'am\b/gi, /\bmam\b/gi, /\binfo(rmation)?\b/gi,
+              /\bdetails?\b/gi, /\babout\b/gi, /\bfor\b/gi, /\bof\b/gi, /\bnamed\b/gi
+            ];
+            keywordsToRemove.forEach(pattern => { facultyName = facultyName.replace(pattern, ''); });
+            facultyName = facultyName.replace(/\?|!|\./g, '').replace(/\s+/g, ' ').trim();
+            
+            if (!facultyName || facultyName.length < 3) {
+              res.write("Please provide the faculty member's name (at least 3 characters). For example: 'Show info for Yokesh' or 'Find faculty Rajesh Kumar'");
+              res.end();
+              return;
+            }
+            allData.facultyInfo = await getFacultyInfo(authData, session, sessionId, facultyName);
+            break;
+          case 'getacademiccalendar':
+            allData.academicCalendar = await getAcademicCalendar(authData, session, sessionId);
+            break;
+        }
+      } catch (error) {
+        console.error(`[${sessionId}] Error fetching data:`, error.message);
+      }
+    }
+
+    // Send the DATA packet first
+    res.write(JSON.stringify({ type: 'DATA', payload: allData }) + '\n\n');
+
+    // Now generate response using STREAMING
+    const { GoogleGenerativeAI } = require("@google/generative-ai");
+    const config = getBestSessionConfig();
+    
+    if (!config) {
+      res.write("I'm having trouble with my API keys right now (All keys exhausted/blocked). Please tell the developer.");
+      res.end();
+      return;
+    }
+    
+    const genAI = new GoogleGenerativeAI(config.key);
+    const model = genAI.getGenerativeModel({ 
+      model: config.model,
+      systemInstruction: VTOP_SYSTEM_INSTRUCTION
+    });
+    
+    const recentHistory = session.conversationHistory.map(msg => ({
+      role: msg.role,
+      parts: [{ text: msg.content }]
+    }));
+    
+    // Build prompt based on intents and data
+    let prompt = '';
+    if (needsMultipleData) {
+      let dataContext = '';
+      let promptSections = [];
+      
+      if (allData.cgpa && intents.includes('getcgpa')) {
+        dataContext += `\nCGPA Data: ${JSON.stringify(allData.cgpa, null, 2)}`;
+        promptSections.push(`For CGPA: Generate a friendly, encouraging response about their CGPA. Keep it conversational and positive. Include the CGPA value and maybe a motivational comment.`);
+      }
+      if (allData.attendance && intents.includes('getattendance')) {
+        dataContext += `\nAttendance Data: ${JSON.stringify(allData.attendance, null, 2)}`;
+        promptSections.push(`For Attendance: Create a table with columns: Course | Attended/Total | Percentage | 75% Alert | Status. Use 'alertMessage' for alerts and 'alertStatus' for status emojis (🔴 danger, ⚠️ caution, ✅ safe). Add analysis of courses needing attention with specific class counts needed.`);
+      }
+      if (allData.assignments && intents.includes('getassignments')) {
+        dataContext += `\nAssignments Data: ${JSON.stringify(allData.assignments, null, 2)}`;
+        promptSections.push(`For Assignments: Create SEPARATE tables for each course. Format: ### Course Name (Code), then table with columns: | Assignment | Due Date | Days Left |. Show "X days overdue" if past, "Due today!" if today, "X days left" if upcoming. Then summary with overdue and urgent deadlines (3-7 days).`);
+      }
+      if (allData.marks && intents.includes('getmarks')) {
+        dataContext += `\nMarks Data: ${JSON.stringify(allData.marks, null, 2)}`;
+        promptSections.push(`For Marks: Create SEPARATE tables for each subject. Format: ### Course Name (Code), then table with columns: | Assessment | Scored | Maximum | Weightage | Weightage% |. Add course total after each table. Then overall analysis in very short`);
+      }
+      if (allData.loginHistory && intents.includes('getloginhistory')) {
+        dataContext += `\nLogin History: ${JSON.stringify(allData.loginHistory, null, 2)}`;
+        promptSections.push(`For Login History: Format as a markdown table with columns: | Date | Time | IP Address | Status |. Then add a summary.`);
+      }
+      if (allData.examSchedule && intents.includes('getexamschedule')) {
+        dataContext += `\nExam Schedule: ${JSON.stringify(allData.examSchedule, null, 2)}`;
+        promptSections.push(`For Exam Schedule: Create separate tables for each exam type (FAT, CAT1, CAT2) with columns: | Course Code | Course Title | Date | Time | Venue | Seat No |.`);
+      }
+      if (allData.timetable && intents.includes('gettimetable')) {
+        dataContext += `\nTimetable Data: ${JSON.stringify(allData.timetable, null, 2)}`;
+        promptSections.push(`For Timetable: Create day-wise tables (Monday-Friday) with columns: Time | Course | Venue | Faculty.`);
+      }
+      if (allData.leaveHistory && intents.includes('getleavehistory')) {
+        dataContext += `\nLeave History: ${JSON.stringify(allData.leaveHistory, null, 2)}`;
+        promptSections.push(`For Leave History: Create a table with columns: | Place | Reason | Type | From → To | Status |. Use ✅ for approved, ❌ for cancelled, ⏳ for pending.`);
+      }
+      if (allData.leaveStatus && intents.includes('getleavestatus')) {
+        dataContext += `\nLeave Status: ${JSON.stringify(allData.leaveStatus, null, 2)}`;
+        promptSections.push(`For Leave Status: Create table with current leave applications.`);
+      }
+      if (allData.grades && intents.includes('getgrades')) {
+        dataContext += `\nGrades Data: ${JSON.stringify(allData.grades, null, 2)}`;
+        promptSections.push(`For Grades: Create a table with columns: | Course Code | Course Title | Credits | Total | Grade |. Use grade emojis.`);
+      }
+      if (allData.paymentHistory && intents.includes('getpaymenthistory')) {
+        dataContext += `\nPayment History: ${JSON.stringify(allData.paymentHistory, null, 2)}`;
+        promptSections.push(`For Payment History: Create a table with columns: | Invoice No | Receipt No | Date | Amount | Campus |.`);
+      }
+      if (allData.proctorDetails && intents.includes('getproctordetails')) {
+        dataContext += `\nProctor Details: ${JSON.stringify(allData.proctorDetails, null, 2)}`;
+        promptSections.push(`For Proctor Details: Format with emojis (👨‍🏫 name, 📧 email, 📍 cabin).`);
+      }
+      if (allData.gradeHistory && intents.includes('getgradehistory')) {
+        dataContext += `\nGrade History: ${JSON.stringify(allData.gradeHistory, null, 2)}`;
+        promptSections.push(`For Grade History: Show comprehensive academic report with grade distribution, CGPA, credits, curriculum progress, and recent courses table.`);
+      }
+      if (allData.counsellingRank && intents.includes('getcounsellingrank')) {
+        dataContext += `\nCounselling Rank: ${JSON.stringify(allData.counsellingRank, null, 2)}`;
+        promptSections.push(`For Counselling Rank: Format with emojis showing rank, group, slot, report time, venue, and counseling date.`);
+      }
+      if (allData.facultyInfo && intents.includes('getfacultyinfo')) {
+        dataContext += `\nFaculty Info: ${JSON.stringify(allData.facultyInfo, null, 2)}`;
+        promptSections.push(`For Faculty Info: If multiple results, list all. If single result, show details with name, designation, department, school, email, cabin, open hours.`);
+      }
+      if (allData.academicCalendar && intents.includes('getacademiccalendar')) {
+        const currentDate = new Date().toDateString();
+        dataContext += `\nAcademic Calendar: ${JSON.stringify(allData.academicCalendar, null, 2)}\nCURRENT DATE: ${currentDate}`;
+        promptSections.push(`For Academic Calendar: Use CURRENT DATE (${currentDate}) for relative queries. Only show specific events if asked. If full calendar requested, show month-wise summary.`);
+      }
+
+      prompt = `The user asked: "${message}"\n\nYou have access to multiple data sources:\n${dataContext}\n\nFORMATTING INSTRUCTIONS:\n${promptSections.join('\n')}\n\nIMPORTANT:\n- Present ALL the data the user requested\n- Organize it clearly with headers for each section\n- Keep it concise but comprehensive\n- Add a brief summary at the start if multiple data types\n- Use proper formatting for readability`;
+    } else {
+      // Single intent prompt
+      const intent = intents[0];
+      const data = Object.values(allData)[0];
       
       switch (intent) {
         case 'getcgpa':
-          try {
-            const authData = await getAuthData(sessionId);
-            allData.cgpa = await getCGPA(authData, session, sessionId);
-            response = await generateResponse(intent, allData.cgpa, message, session);
-          } catch (error) {
-            response = "Sorry, I couldn't fetch your CGPA right now. Please try again.";
-          }
+          prompt = `The user asked: "${message}"\nTheir CGPA data is: ${JSON.stringify(data, null, 2)}\n\nGenerate a friendly, encouraging response about their CGPA. Keep it conversational and positive. Include the CGPA value and maybe a motivational comment.`;
           break;
-
         case 'getattendance':
-          try {
-            const authData = await getAuthData(sessionId);
-            allData.attendance = await getAttendance(authData, session, sessionId);
-            response = await generateResponse(intent, allData.attendance, message, session);
-          } catch (error) {
-            response = "Sorry, I couldn't fetch your attendance data right now. Please try again.";
-          }
+          prompt = `The user asked: "${message}"\nHere's their attendance data: ${JSON.stringify(data, null, 2)}\n\n**IMPORTANT NOTE**: This calculator calculates attendance to 74.01% (which VIT considers as 75%).\n\nCreate a markdown table with these columns:\n| Course | Attended/Total | Percentage | 75% Alert | Status |\n\nFor the "75% Alert" column, use the 'alertMessage' field from the data. After the table, add an Analysis section(keep it super short) with:\n- **Overall Summary**: How many courses are safe, in caution zone, or in danger\n- **⚠️ Courses Needing Attention** (below 75%): List them with how many classes needed`;
           break;
-        
-        case 'getleavestatus':
-  try {
-    const authData = await getAuthData(sessionId);
-    allData.leaveStatus = await getLeaveStatus(authData, session, sessionId);
-    response = await generateResponse(intent, allData.leaveStatus, message, session);
-  } catch (error) {
-    response = "Sorry, I couldn't fetch your leave status right now. Please try again.";
-  }
-  break;
-
         case 'getassignments':
-          try {
-            const authData = await getAuthData(sessionId);
-            allData.assignments = await getAssignments(authData, session, sessionId);
-            response = await generateResponse(intent, allData.assignments, message, session);
-          } catch (error) {
-            response = "Sorry, I couldn't fetch your assignment data right now. Please try again.";
-          }
+          prompt = `The user asked: "${message}"\nHere's their assignments data: ${JSON.stringify(data, null, 2)}\n\nFormat assignments as SEPARATE tables for each course:\n\nFor each course, create:\n### Course Name (Course Code)\n| Assignment | Due Date | Status |\n\nUse the 'status' field from the data (already calculated). Use emojis and markdown formatting for emphasis on urgent items.`;
           break;
-
         case 'getmarks':
-          try {
-            const authData = await getAuthData(sessionId);
-            allData.marks = await getMarks(authData, session, sessionId);
-            response = await generateResponse(intent, allData.marks, message, session);
-          } catch (error) {
-            response = "Sorry, I couldn't fetch your marks right now. Please try again.";
-          }
+          prompt = `The user asked: "${message}"\nHere's their marks data: ${JSON.stringify(data, null, 2)}\n\nFormat marks as SEPARATE tables for each subject/course:\n\nFor each course, create:\n### Course Name (Course Code)\n| Assessment | Scored | Maximum | Weightage | WeightageMax |\n\nAfter each course table, show: Lost Weightage: ZM - Z\n\nIf passingInfo exists, add:\n**🎯 Passing Status:**\n- Type: Theory/Lab/STS\n- Status: ✅ Safe / 🔴 Need X marks in FAT to pass`;
           break;
-
         case 'getloginhistory':
-          try {
-            const authData = await getAuthData(sessionId);
-            allData.loginHistory = await getLoginHistory(authData, session, sessionId);
-            response = await generateResponse(intent, allData.loginHistory, message, session);
-          } catch (error) {
-            response = "Sorry, I couldn't fetch your login history right now. Please try again.";
-          }
+          prompt = `The user asked: "${message}"\nHere's their login history data: ${JSON.stringify(data, null, 2)}\n\nFormat as a markdown table with columns:\n| Date | Time | IP Address | Status |`;
           break;
-
         case 'getexamschedule':
-          try {
-            const authData = await getAuthData(sessionId);
-            allData.examSchedule = await getExamSchedule(authData, session, sessionId);
-            response = await generateResponse(intent, allData.examSchedule, message, session);
-          } catch (error) {
-            response = "Sorry, I couldn't fetch your exam schedule right now. Please try again.";
-          }
+          prompt = `The user asked: "${message}"\nHere's their exam schedule data: ${JSON.stringify(data, null, 2)}\n\nCreate separate markdown tables for each exam type (FAT, CAT1, CAT2) with columns:\n| Course Code | Course Title | Date | Time | Venue | Seat No |`;
           break;
-
         case 'gettimetable':
-  try {
-    const authData = await getAuthData(sessionId);
-    allData.timetable = await getTimetable(authData, session, sessionId);
-    response = await generateResponse(intent, allData.timetable, message, session);
-  } catch (error) {
-    response = "Sorry, I couldn't fetch your timetable right now. Please try again.";
-  }
-  break;
-
-  case 'getleavehistory':
-  try {
-    const authData = await getAuthData(sessionId);
-    allData.leaveHistory = await getLeaveHistory(authData, session, sessionId);
-    response = await generateResponse(intent, allData.leaveHistory, message, session);
-  } catch (error) {
-    response = "Sorry, I couldn't fetch your leave history right now. Please try again.";
-  }
-  break;
-
-case 'getgrades':
-  try {
-    const authData = await getAuthData(sessionId);
-    allData.grades = await getGrades(authData, session, sessionId);
-    response = await generateResponse(intent, allData.grades, message, session);
-  } catch (error) {
-    response = "Sorry, I couldn't fetch your grades right now. Please try again.";
-  }
-  break;
-
-case 'getpaymenthistory':
-  try {
-    const authData = await getAuthData(sessionId);
-    allData.paymentHistory = await getPaymentHistory(authData, session, sessionId);
-    response = await generateResponse(intent, allData.paymentHistory, message, session);
-  } catch (error) {
-    response = "Sorry, I couldn't fetch your payment history right now. Please try again.";
-  }
-  break;
-
-case 'getproctordetails':
-  try {
-    const authData = await getAuthData(sessionId);
-    allData.proctorDetails = await getProctorDetails(authData, session, sessionId);
-    response = await generateResponse(intent, allData.proctorDetails, message, session);
-  } catch (error) {
-    response = "Sorry, I couldn't fetch your proctor details right now. Please try again.";
-  }
-  break;
-
-case 'getgradehistory':
-  try {
-    const authData = await getAuthData(sessionId);
-    allData.gradeHistory = await getGradeHistory(authData, session, sessionId);
-    response = await generateResponse(intent, allData.gradeHistory, message, session);
-  } catch (error) {
-    response = "Sorry, I couldn't fetch your grade history right now. Please try again.";
-  }
-  break;
-
-case 'getcounsellingrank':
-  try {
-    const authData = await getAuthData(sessionId);
-    allData.counsellingRank = await getCounsellingRank(authData, session, sessionId);
-    response = await generateResponse(intent, allData.counsellingRank, message, session);
-  } catch (error) {
-    response = "Sorry, I couldn't fetch your counselling rank right now. Please try again.";
-  }
-  break;
-
-case 'getfacultyinfo':
-  try {
-    const authData = await getAuthData(sessionId);
-    
-    // Improved faculty name extraction
-    let facultyName = message;
-    
-    // Remove common phrases from the beginning/end
-    const phrasesToRemove = [
-      /^show\s+(me\s+)?/gi,
-      /^find\s+(me\s+)?/gi,
-      /^search\s+(for\s+)?/gi,
-      /^get\s+(me\s+)?/gi,
-      /^fetch\s+(me\s+)?/gi,
-      /^tell\s+me\s+about\s+/gi,
-      /^who\s+is\s+/gi,
-      /^give\s+me\s+/gi,
-      /^i\s+want\s+/gi,
-      /^can\s+you\s+(show|find|get|tell)\s+(me\s+)?/gi
-    ];
-    
-    phrasesToRemove.forEach(pattern => {
-      facultyName = facultyName.replace(pattern, '');
-    });
-    
-    // Remove faculty-related keywords
-    const keywordsToRemove = [
-      /\bfaculty\b/gi,
-      /\bprofessor\b/gi,
-      /\bteacher\b/gi,
-      /\bsir\b/gi,
-      /\bmadam\b/gi,
-      /\bma'am\b/gi,
-      /\bmam\b/gi,
-      /\binfo(rmation)?\b/gi,
-      /\bdetails?\b/gi,
-      /\babout\b/gi,
-      /\bfor\b/gi,
-      /\bof\b/gi,
-      /\bnamed\b/gi
-    ];
-    
-    keywordsToRemove.forEach(pattern => {
-      facultyName = facultyName.replace(pattern, '');
-    });
-    
-    // Clean up punctuation and extra spaces
-    facultyName = facultyName
-      .replace(/\?|!|\./g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-    
-    console.log(`[${sessionId}] Original message: "${message}"`);
-    console.log(`[${sessionId}] Extracted faculty name: "${facultyName}"`);
-    
-    // If extraction failed, ask user
-    if (!facultyName || facultyName.length < 3) {
-      response = "Please provide the faculty member's name (at least 3 characters). For example: 'Show info for Yokesh' or 'Find faculty Rajesh Kumar'";
-      break;
-    }
-    
-    allData.facultyInfo = await getFacultyInfo(authData, session, sessionId, facultyName);
-    response = await generateResponse(intent, allData.facultyInfo, message, session);
-  } catch (error) {
-    console.error(`[${sessionId}] Faculty info error:`, error);
-    response = "Sorry, I couldn't fetch faculty information right now. Please make sure you've provided the faculty name correctly and try again.";
-  }
-  break;
-
-case 'getacademiccalendar':
-  try {
-    const authData = await getAuthData(sessionId);
-    allData.academicCalendar = await getAcademicCalendar(authData, session, sessionId);
-    response = await generateResponse(intent, allData.academicCalendar, message, session);
-  } catch (error) {
-    response = "Sorry, I couldn't fetch the academic calendar right now. Please try again.";
-  }
-  break;
-
+          prompt = `The user asked: "${message}"\nHere's their timetable data: ${JSON.stringify(data, null, 2)}\n\nFormat the timetable in a clean, day-wise view. For each day (Monday to Friday), create:\n### Monday\n| Time | Course | Venue | Slot |`;
+          break;
+        case 'getleavehistory':
+          prompt = `The user asked: "${message}"\nHere's their leave history data: ${JSON.stringify(data, null, 2)}\n\nFormat as a markdown table with columns:\n| Place | Reason | Type | From → To | Status |\nUse emojis: ✅ for APPROVED, ❌ for CANCELLED, ⏳ for PENDING`;
+          break;
+        case 'getleavestatus':
+          prompt = `The user asked: "${message}"\nHere's their current leave status: ${JSON.stringify(data, null, 2)}\n\nFormat as a markdown table with columns:\n| Place | Reason | Type | From → To | Status |`;
+          break;
+        case 'getgrades':
+          prompt = `The user asked: "${message}"\nHere's their semester grades data: ${JSON.stringify(data, null, 2)}\n\nCreate a markdown table with columns:\n| Course Code | Course Title | Credits | Total | Grade |\nUse grade emojis: 🌟 for S, ✅ for A, 👍 for B, etc.`;
+          break;
+        case 'getpaymenthistory':
+          prompt = `The user asked: "${message}"\nHere's their payment history: ${JSON.stringify(data, null, 2)}\n\nFormat as a markdown table with columns:\n| Invoice No | Receipt No | Date | Amount | Campus |`;
+          break;
+        case 'getproctordetails':
+          prompt = `The user asked: "${message}"\nHere's their proctor details: ${JSON.stringify(data, null, 2)}\n\nFormat the proctor information in a clean way with emojis like 👨‍🏫, 📧, 📍`;
+          break;
+        case 'getgradehistory':
+          prompt = `The user asked: "${message}"\nHere's their complete grade history: ${JSON.stringify(data, null, 2)}\n\nCreate a comprehensive academic history report with grade distribution, CGPA, credits, curriculum progress, recent courses.`;
+          break;
+        case 'getcounsellingrank':
+          prompt = `The user asked: "${message}"\nHere's their counselling rank details: ${JSON.stringify(data, null, 2)}\n\nFormat the counselling information clearly with emojis: 🎯, 👥, 🎫, ⏰, 📍, 📅`;
+          break;
+        case 'getfacultyinfo':
+          prompt = `The user asked: "${message}"\nHere's the faculty information: ${JSON.stringify(data, null, 2)}\n\nHANDLE THESE SCENARIOS:\n1. If ERROR: Show error message\n2. If MULTIPLE FACULTIES: List all with name, designation, school\n3. If SINGLE FACULTY: Show detailed info with name, designation, department, school, email, cabin, open hours`;
+          break;
+        case 'getacademiccalendar':
+          const currentDate = new Date().toDateString();
+          prompt = `The user asked: "${message}"\nCURRENT REAL DATE: ${currentDate}\nHere's the academic calendar data: ${JSON.stringify(data, null, 2)}\n\nIMPORTANT: Use CURRENT DATE (${currentDate}) to answer relative questions. Smart filter: show specific events if asked, full calendar if requested.`;
+          break;
+        case 'downloadgradehistory':
+          prompt = `The user asked: "${message}"\n\nRespond by providing a direct link: [📄 Download Grade History PDF](/api/downloads/grade-history?sessionId=${session.id})`;
+          break;
         default:
-          response = await generateResponse(intent, null, message, session);
+          prompt = `The user asked: "${message}"\n\nBased on our conversation, answer their question naturally.`;
           break;
       }
     }
 
-    session.conversationHistory.push({ role: 'model', content: response });
+    const result = await model.generateContentStream({
+      contents: [
+        ...recentHistory,
+        { role: 'user', parts: [{ text: prompt }] }
+      ]
+    });
+
+    let fullText = "";
+    for await (const chunk of result.stream) {
+      const chunkText = chunk.text();
+      fullText += chunkText;
+      res.write(chunkText);
+    }
+
+    // Update history and end response
+    session.conversationHistory.push({ role: 'model', content: fullText });
     if (session.conversationHistory.length > MAX_HISTORY) {
       session.conversationHistory.shift();
     }
-
-    res.json({ response, data: allData });
+    
+    res.end();
 
   } catch (error) {
     console.error(`[${sessionId}] Chat error:`, error.message || error);
-    res.status(500).json({ 
-      response: "I encountered an error processing your request. Please try again.",
-      data: null 
-    });
+    if (!res.headersSent) {
+      res.status(500).json({ 
+        response: "I encountered an error processing your request. Please try again.",
+        data: null 
+      });
+    } else {
+      res.end();
+    }
   }
 });
 
