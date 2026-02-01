@@ -919,6 +919,94 @@ IMPORTANT:
   }
 }
 
+
+// ===== FIXED STREAMING RESPONSE GENERATION WITH RETRY LOGIC =====
+
+// Add this function AFTER your generateResponseMulti() function and BEFORE the /api/chat endpoint
+
+/**
+ * Generates streaming response with automatic retry on 429 errors
+ * This mirrors the retry logic from your old generateResponse() function
+ */
+async function generateStreamingResponse(prompt, session, res, retryCount = 0) {
+  const { GoogleGenerativeAI } = require("@google/generative-ai");
+  
+  const config = getBestSessionConfig();
+  if (!config) {
+    res.write("I'm having trouble with my API keys right now (All keys exhausted/blocked). Please tell the developer.");
+    res.end();
+    return "Error: No API keys available";
+  }
+  
+  const { key, model: modelName } = config;
+  const genAI = new GoogleGenerativeAI(key);
+  const model = genAI.getGenerativeModel({ 
+    model: modelName,
+    systemInstruction: VTOP_SYSTEM_INSTRUCTION
+  });
+  
+  const recentHistory = session.conversationHistory.map(msg => ({
+    role: msg.role,
+    parts: [{ text: msg.content }]
+  }));
+  
+  try {
+    const result = await model.generateContentStream({
+      contents: [
+        ...recentHistory,
+        { role: 'user', parts: [{ text: prompt }] }
+      ]
+    });
+    
+    let fullText = "";
+    for await (const chunk of result.stream) {
+      const chunkText = chunk.text();
+      fullText += chunkText;
+      res.write(chunkText);
+    }
+    
+    return fullText; // Return for conversation history update
+    
+  } catch (error) {
+    // Handle 429 errors with retry logic (same as old generateResponse)
+    if (error.status === 429 || error.message?.includes('429') || error.message?.includes('quota')) {
+      const isDaily = error.message?.toLowerCase().includes("daily") || error.message?.includes("GenerateRequestsPerDay");
+      const type = isDaily ? "DAILY LIMIT" : "RPM LIMIT";
+      
+      if (!isDaily) console.warn(`⚠️ ${type} (429) during streaming on [${modelName}]. Rotating...`);
+      
+      blockKey(key, modelName, error.message);
+      
+      // ✅ RETRY with fresh key (same logic as old code)
+      if (retryCount < GEMINI_KEYS.length * 2) {
+        return await generateStreamingResponse(prompt, session, res, retryCount + 1);
+      }
+      
+      // All keys exhausted
+      console.warn("⚠️ ALL API KEYS EXHAUSTED for streaming response.");
+      res.write("\n\nMy daily request limit has been reached (429). Please try again later.");
+      res.end();
+      return "Error: All API keys exhausted";
+      
+    } else if (error.message?.includes('503') || error.message?.includes('overloaded')) {
+      console.warn('Model overloaded (503) during streaming, rotating key...');
+      
+      if (retryCount < GEMINI_KEYS.length) {
+        return await generateStreamingResponse(prompt, session, res, retryCount + 1);
+      }
+      
+      res.write("\n\nThe AI model is currently overloaded. Please try again in a moment.");
+      res.end();
+      return "Error: Model overloaded";
+      
+    } else {
+      // Unknown error - let it bubble up
+      console.error('Error in streaming generation:', error.message || error);
+      throw error;
+    }
+  }
+}
+
 // ===== LOGIN ENDPOINT =====
 app.post('/api/login', async (req, res) => {
   try {
@@ -1201,27 +1289,7 @@ case 'getacademiccalendar':
     // Send the DATA packet first
     res.write(JSON.stringify({ type: 'DATA', payload: allData }) + '\n\n');
 
-    // Now generate response using STREAMING
-    const { GoogleGenerativeAI } = require("@google/generative-ai");
-    const config = getBestSessionConfig();
-    
-    if (!config) {
-      res.write("I'm having trouble with my API keys right now (All keys exhausted/blocked). Please tell the developer.");
-      res.end();
-      return;
-    }
-    
-    const genAI = new GoogleGenerativeAI(config.key);
-    const model = genAI.getGenerativeModel({ 
-      model: config.model,
-      systemInstruction: VTOP_SYSTEM_INSTRUCTION
-    });
-    
-    const recentHistory = session.conversationHistory.map(msg => ({
-      role: msg.role,
-      parts: [{ text: msg.content }]
-    }));
-    
+
     // Build prompt based on intents and data
     let prompt = '';
     if (needsMultipleData) {
@@ -1359,19 +1427,9 @@ case 'getacademiccalendar':
       }
     }
 
-    const result = await model.generateContentStream({
-      contents: [
-        ...recentHistory,
-        { role: 'user', parts: [{ text: prompt }] }
-      ]
-    });
 
-    let fullText = "";
-    for await (const chunk of result.stream) {
-      const chunkText = chunk.text();
-      fullText += chunkText;
-      res.write(chunkText);
-    }
+    // ✅ Use the NEW retry-enabled streaming function
+    const fullText = await generateStreamingResponse(prompt, session, res);
 
     // Update history and end response
     session.conversationHistory.push({ role: 'model', content: fullText });
