@@ -124,7 +124,7 @@ function blockKey(key, model, errorMsg = "") {
 // --------------------------------------
 
 const sessions = {}; // Store sessions separately
-const MAX_HISTORY = 5; // Keep last 5 messages for context
+const MAX_HISTORY = 50; // Keep last 5 messages for context
 
 function createSession() {
   const sessionId = require('crypto').randomBytes(16).toString('hex');
@@ -569,7 +569,7 @@ case 'getgradehistory':
     
     Create a comprehensive academic history report:
     
-    1. **Grade Distribution** (with emojis):
+    1. **Grade Distribution**:
        Show count for each grade (S, A, B, C, D, E, F, P)
     
     2. **Overall Performance**:
@@ -1372,18 +1372,95 @@ case 'getacademiccalendar':
         case 'getcgpa':
           prompt = `The user asked: "${message}"\nTheir CGPA data is: ${JSON.stringify(data, null, 2)}\n\nGenerate a friendly, encouraging response about their CGPA. Keep it conversational and positive. Include the CGPA value and maybe a motivational comment.`;
           break;
+          
         case 'getattendance':
-          prompt = `The user asked: "${message}"\nHere's their attendance data: ${JSON.stringify(data, null, 2)}\n\n**IMPORTANT NOTE**: This calculator calculates attendance to 74.01% (which VIT considers as 75%).\n\nCreate a markdown table with these columns:\n| Course | Attended/Total | Percentage | 75% Alert | Status |\n\nFor the "75% Alert" column, use the 'alertMessage' field from the data. After the table, add an Analysis section(keep it super short) with:\n- **Overall Summary**: How many courses are safe, in caution zone, or in danger\n- **⚠️ Courses Needing Attention** (below 75%): List them with how many classes needed`;
-          break;
+      prompt = `
+        The user asked: "${message}"
+        Here's their attendance data: ${JSON.stringify(data, null, 2)}
+        
+        **IMPORTANT NOTE**: This calculator calculates attendance to 74.01% (which VIT considers as 75%).
+        
+        Create a markdown table with these columns:
+        | Course | Attended/Total | Percentage | 75% Alert | Status |
+        
+        For the "75% Alert" column, use the 'alertMessage' field from the data.
+            
+        After the table, add an Analysis section(keep it super short) with:
+        - **Overall Summary**: How many courses are safe, in caution zone, or in danger
+        - **⚠️ Courses Needing Attention** (below 75%): List them with how many classes needed
+        
+        Use markdown formatting (bold, emphasis) for important points.
+        IMP: If user is asking for particular subject attendance then show only that subject attendance not all subjects.
+        and if user is asking for best/worst subject then include that in analysis part only not in table part.
+        and if user is asking for only danger/caution/safe subjects then show only those subjects in table part.
+        and if user is asking for particular subject like IoT or DS etc then show only that subject attendance not all subjects.
+        and if user is asking for classes needed to reach 75% then include that in analysis part only not in table part.
+      `;
+      break;
+          
         case 'getassignments':
-          prompt = `The user asked: "${message}"\nHere's their assignments data: ${JSON.stringify(data, null, 2)}\n\nFormat assignments as SEPARATE tables for each course:\n\nFor each course, create:\n### Course Name (Course Code)\n| Assignment | Due Date | Status |\n\nUse the 'status' field from the data (already calculated). Use emojis and markdown formatting for emphasis on urgent items.`;
-          break;
+      prompt = `
+        The user asked: "${message}"
+        Here's their assignments data: ${JSON.stringify(data, null, 2)}
+        
+        Format assignments as SEPARATE tables for each course:
+        
+        For each course, create:
+        ### Course Name (Course Code)
+        | Assignment | Due Date | Status |
+        |------------|----------|--------|
+        | Assessment - 1 | 22-Sep-2025 | 5 days left |
+        | Assessment - 2 | 31-Oct-2025 | Overdue |
+        
+        Use the 'status' field from the data (already calculated).
+        - Shows "X days overdue" if past due
+        - Shows "Due today!" if due today
+        - Shows "X days left" if upcoming
+        
+        
+        Use emojis and markdown formatting for emphasis on urgent items.
+      `;
+      break;
+
         case 'getmarks':
-          prompt = `The user asked: "${message}"\nHere's their marks data: ${JSON.stringify(data, null, 2)}\n\nFormat marks as SEPARATE tables for each subject/course:\n\nFor each course, create:\n### Course Name (Course Code)\n| Assessment | Scored | Maximum | Weightage | WeightageMax |\n\nAfter each course table, show: Lost Weightage: ZM - Z\n\nIf passingInfo exists, add:\n**🎯 Passing Status:**\n- Type: Theory/Lab/STS\n- Status: ✅ Safe / 🔴 Need X marks in FAT to pass`;
-          break;
+      prompt = `
+        The user asked: "${message}"
+        Here's their marks data: ${JSON.stringify(data, null, 2)}
+        
+        Format marks as SEPARATE tables for each subject/course:
+        
+        For each course, create:
+        ### Course Name (Course Code)
+        | Assessment | Scored | Maximum | Weightage | WeightageMax |
+        |------------|--------|---------|-----------|------------  |
+        | CAT-1      | X      | Y       | Z         | ZM           |
+        | CAT-2      | X      | Y       | Z         | ZM           |
+        | Total(Bold)| X      | Y       | Z         | ZM           |
+        
+        After each course table, show:
+        - Lost Weightage: ZM - Z
+        
+        If passingInfo exists, add:
+        **🎯 Passing Status:**
+        - Type: Theory/Lab/STS
+        - Status: ✅ Safe / 🔴 Need X marks in FAT to pass
+        
+        
+        Use markdown formatting and emojis for visual appeal.
+        IMP: Sometimes dont ask more than the user asked for example if user is asking for only IoT marks then show only IoT marks not all.
+        and if user is asking for best/worst subject then include that in analysis part only not in table part.
+        and also if user is asking for particular assessment like CAT1 marks then show only CAT1 marks not CAT2 or total.
+        and if user is asking for weightage marks only then show only weightage marks not scored or maximum
+        and if user is asking for only theory or lab marks then show only that not both.
+        and if user is asking for particular subject like IoT or DS etc then show only that subject marks not all subjects.
+        but definetly use markdown even if user is asking for single subject marks
+      `;
+      break;
+
         case 'getloginhistory':
           prompt = `The user asked: "${message}"\nHere's their login history data: ${JSON.stringify(data, null, 2)}\n\nFormat as a markdown table with columns:\n| Date | Time | IP Address | Status |`;
           break;
+
         case 'getexamschedule':
           prompt = `The user asked: "${message}"\nHere's their exam schedule data: ${JSON.stringify(data, null, 2)}\n\nCreate separate markdown tables for each exam type (FAT, CAT1, CAT2) with columns:\n| Course Code | Course Title | Date | Time | Venue | Seat No |`;
           break;
@@ -1405,8 +1482,6 @@ case 'getacademiccalendar':
         case 'getproctordetails':
           prompt = `The user asked: "${message}"\nHere's their proctor details: ${JSON.stringify(data, null, 2)}\n\nFormat the proctor information in a clean way with emojis like 👨‍🏫, 📧, 📍`;
           break;
-        case 'getgradehistory':
-          prompt = `The user asked: "${message}"\nHere's their complete grade history: ${JSON.stringify(data, null, 2)}\n\nCreate a comprehensive academic history report with grade distribution, CGPA, credits, curriculum progress, recent courses.`;
           break;
         case 'getcounsellingrank':
           prompt = `The user asked: "${message}"\nHere's their counselling rank details: ${JSON.stringify(data, null, 2)}\n\nFormat the counselling information clearly with emojis: 🎯, 👥, 🎫, ⏰, 📍, 📅`;
@@ -1421,6 +1496,33 @@ case 'getacademiccalendar':
         case 'downloadgradehistory':
           prompt = `The user asked: "${message}"\n\nRespond by providing a direct link: [📄 Download Grade History PDF](/api/downloads/grade-history?sessionId=${session.id})`;
           break;
+    case 'getgradehistory':
+      prompt = `
+        The user asked: "${message}"
+        Here's their complete grade history: ${JSON.stringify(data, null, 2)}
+        
+        Create a comprehensive academic history report:
+        
+        1. **Grade Distribution**:
+           Show count for each grade (S, A, B, C, D, E, F, P)
+        
+        2. **Overall Performance**:
+           - CGPA
+           - Total courses completed
+           - Total credits registered vs earned
+        
+        3. **Curriculum Progress**:
+           Show progress for each requirement type (Foundation Core, Discipline Core, etc.)
+           Use ✅ for completed, ⏳ for in-progress
+        
+        4. **Recent Courses** (last 5-10 courses):
+           Table with: Course | Grade | Credits | Exam Month
+        
+        5. **PDF Download**:
+           At the end, add a friendly line like "📄 Want the complete official record? [Download Grade History PDF](/api/downloads/grade-history?sessionId=${session.id})"
+        
+        Use markdown formatting extensively.
+      `;
         default:
           prompt = `The user asked: "${message}"\n\nBased on our conversation, answer their question naturally.`;
           break;

@@ -75,9 +75,80 @@
 .markdown-content {
     transition: all 0.1s ease-out;
 }
+        @keyframes rotate {
+            100% { transform: rotate(360deg); }
+        }
+        .gemini-gradient-text {
+            background: linear-gradient(to right, #4285f4, #9b72cb, #d96570);
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-size: 200% auto;
+            animation: gradientMove 3s linear infinite;
+        }
+        @keyframes gradientMove {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        .gemini-spinner {
+            position: relative;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            /* Thinner, sharper gradient ring */
+            background: conic-gradient(from 0deg, #4285f4, #9b72cb, #d96570, #4285f4);
+            animation: rotate 1.5s linear infinite;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 15px rgba(66, 133, 244, 0.3); /* Add the "Glow" */
+        }
+        .gemini-spinner::before {
+            content: '';
+            position: absolute;
+            inset: 2px; /* Thinner border (was 3px) */
+            background: #fff;
+            border-radius: 50%;
+        }
+        /* This makes the text shimmer like a rainbow instead of just pulsing */
+        .thinking-text {
+            background: linear-gradient(90deg, #4285f4, #9b72cb, #d96570, #4285f4);
+            background-size: 200% auto;
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: shine 3s linear infinite;
+            font-weight: 500;
+        }
+        @keyframes shine {
+            to { background-position: 200% center; }
+        }
+
         body {
             margin: 0;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+        }
+
+        /* --- MODERN SCROLLBAR STYLES --- */
+        /* For Webkit browsers (Chrome, Edge, Safari) */
+        ::-webkit-scrollbar {
+            width: 6px; /* Very thin */
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background-color: rgba(156, 163, 175, 0.5); /* Semi-transparent gray */
+            border-radius: 20px; /* Fully rounded */
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background-color: rgba(107, 114, 128, 0.8);
+        }
+        /* Firefox */
+        * {
+            scrollbar-width: thin;
+            scrollbar-color: rgba(156, 163, 175, 0.5) transparent;
         }
     </style>
 </head>
@@ -187,6 +258,48 @@
                 <circle cx="12" cy="12" r="9"/>
             </svg>
         );
+
+        const GeminiSpinner = () => (
+            <div className="gemini-spinner">
+                {/* Optional: Add the sparkle icon inside if you want */}
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="url(#grad1)" style={{zIndex: 10}}>
+                   <defs>
+                       <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="0%">
+                           <stop offset="0%" style={{stopColor:"#4285f4", stopOpacity:1}} />
+                           <stop offset="100%" style={{stopColor:"#d96570", stopOpacity:1}} />
+                       </linearGradient>
+                   </defs>
+                   <path d="M12 2L15 9L22 12L15 15L12 22L9 15L2 12L9 9L12 2Z" />
+                </svg>
+            </div>
+        );
+
+        const ThinkingIndicator = () => {
+            const [text, setText] = useState("Thinking...");
+            // Cycle through thoughts
+            useEffect(() => {
+                const thoughts = [
+                    "Thinking...",
+                    "Analyzing query...", 
+                    "Checking VTOP data...",
+                    "Formulating response..."
+                ];
+                let index = 0;
+                const interval = setInterval(() => {
+                    index = (index + 1) % thoughts.length;
+                    setText(thoughts[index]);
+                }, 1500);
+                return () => clearInterval(interval);
+            }, []);
+
+            return (
+                <div className="flex items-center space-x-3 p-1">
+                    <GeminiSpinner />
+                    {/* Updated class name here for the shimmer effect */}
+                    <span className="text-sm thinking-text">{text}</span>
+                </div>
+            );
+        };
 
         const PapersInterface = ({ onBack }) => {
             const [courseCode, setCourseCode] = useState('');
@@ -760,7 +873,7 @@ const handleLogin = async (loginData) => {
                 const loadingMessage = {
                     id: Date.now() + 1,
                     type: 'bot',
-                    content: '🤔 Processing your request...',
+                    content: '',
                     timestamp: new Date(),
                     loading: true
                 };
@@ -776,9 +889,12 @@ const handleLogin = async (loginData) => {
                     const reader = response.body.getReader();
                     const decoder = new TextDecoder();
                     let botMessageId = Date.now() + 2;
-                    let fullContent = "";
+                    
+                    let streamBuffer = "";
+                    let displayedText = "";
                     let isFirstChunk = true;
                     let receivedData = null;
+                    let isStreamComplete = false;
 
                     // Remove loading message and create placeholder
                     setMessages(prev => {
@@ -791,32 +907,38 @@ const handleLogin = async (loginData) => {
                         }];
                     });
 
-                    // ✅ SMOOTHING MECHANISM - Batch updates every 50ms instead of every chunk
-                    let updateTimer = null;
-                    let pendingUpdate = false;
-
-                    const scheduleUpdate = () => {
-                        if (updateTimer) return; // Already scheduled
-                        
-                        updateTimer = setTimeout(() => {
+                    // ✨ GEMINI-STYLE SMOOTH TYPING EFFECT
+                    // Decouples network speed from reading speed for a silky smooth experience
+                    const typingInterval = setInterval(() => {
+                        if (displayedText.length < streamBuffer.length) {
+                            // Calculate dynamic typing speed based on backlog
+                            const backlog = streamBuffer.length - displayedText.length;
+                            let charsToAdd = 1;
+                            
+                            if (backlog > 200) charsToAdd = 10;
+                            else if (backlog > 100) charsToAdd = 5;
+                            else if (backlog > 30) charsToAdd = 3;
+                            else if (backlog > 10) charsToAdd = 2;
+                            
+                            displayedText += streamBuffer.substring(displayedText.length, displayedText.length + charsToAdd);
+                            
                             setMessages(prev => prev.map(msg => 
                                 msg.id === botMessageId 
-                                    ? { ...msg, content: fullContent, data: receivedData } 
+                                    ? { ...msg, content: displayedText, data: receivedData } 
                                     : msg
                             ));
-                            updateTimer = null;
-                            
-                            // If more updates came in during the delay, schedule another
-                            if (pendingUpdate) {
-                                pendingUpdate = false;
-                                scheduleUpdate();
-                            }
-                        }, 50); // Update UI every 50ms max (20 FPS - smooth but not overwhelming)
-                    };
+                        } else if (isStreamComplete) {
+                            // Only stop when both stream is done AND we've shown all text
+                            clearInterval(typingInterval);
+                        }
+                    }, 20); // 50 updates per second
 
                     while (true) {
                         const { done, value } = await reader.read();
-                        if (done) break;
+                        if (done) {
+                            isStreamComplete = true;
+                            break;
+                        }
 
                         const text = decoder.decode(value, { stream: true });
                         
@@ -826,32 +948,15 @@ const handleLogin = async (loginData) => {
                             try {
                                 const dataPart = JSON.parse(lines[0]);
                                 receivedData = dataPart.payload;
-                                fullContent += lines.slice(1).join('\n\n');
+                                streamBuffer += lines.slice(1).join('\n\n');
                             } catch (e) {
-                                fullContent += text;
+                                streamBuffer += text;
                             }
                             isFirstChunk = false;
                         } else {
-                            fullContent += text;
-                        }
-
-                        // ✅ Instead of updating immediately, schedule a batched update
-                        if (updateTimer) {
-                            pendingUpdate = true; // Mark that we need another update
-                        } else {
-                            scheduleUpdate();
+                            streamBuffer += text;
                         }
                     }
-
-                    // ✅ Final update - ensure the last content is shown
-                    if (updateTimer) {
-                        clearTimeout(updateTimer);
-                    }
-                    setMessages(prev => prev.map(msg => 
-                        msg.id === botMessageId 
-                            ? { ...msg, content: fullContent, data: receivedData } 
-                            : msg
-                    ));
 
                 } catch (error) {
                     setMessages(prev => {
@@ -1060,11 +1165,8 @@ if (showLoginForm) {
                                             'bg-white text-gray-800 shadow-sm border'
                                         }`
                                     }, [
-                                        message.loading ? 
-                                            React.createElement('div', { className: "flex items-center space-x-2" }, [
-                                                React.createElement(Loader2),
-                                                React.createElement('span', {}, 'Processing...')
-                                            ]) : 
+                                        (message.loading || (!message.content && !message.data && message.type === 'bot')) ? 
+                                            React.createElement(ThinkingIndicator) : 
                                             formatMessage(message),
                                         React.createElement('div', { 
                                             className: `text-xs mt-2 ${
@@ -1098,7 +1200,7 @@ loginStatus === 'success' && !isLoading ?
                         ]) : null,
 
                     // Input Area
-                    React.createElement('div', { className: "p-4 bg-white/80 backdrop-blur-sm border-t border-gray-200", key: 'input' }, [
+                    React.createElement('div', { className: "p-4 bg-white/90 backdrop-blur-md border-t border-gray-100 mb-2 mx-2 rounded-2xl shadow-[0_-5px_20px_rgba(0,0,0,0.05)]", key: 'input' }, [
                         React.createElement('div', { className: "flex items-center space-x-3" }, [
                             React.createElement('div', { className: "flex-1 relative" }, [
                                 React.createElement('textarea', {
