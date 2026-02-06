@@ -1125,6 +1125,21 @@ app.get('/api/session', (req, res) => {
   });
 });
 
+// ===== SESSION VALIDATION ENDPOINT =====
+app.post('/api/session/validate', async (req, res) => {
+  const { sessionId } = req.body;
+  const session = getSession(sessionId);
+  
+  if (session && session.isLoggedIn) {
+    res.json({ 
+      valid: true, 
+      isDemo: session.currentCredentials?.isDemo || false 
+    });
+  } else {
+    res.json({ valid: false });
+  }
+});
+
 // ===== LOGOUT ENDPOINT =====
 app.post('/api/logout', async (req, res) => {
   const { sessionId } = req.body;

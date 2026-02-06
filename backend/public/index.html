@@ -3,149 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VTOP Assistant - Academic Chat Interface</title>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <title>VTOP Assistant - Login</title>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
-.suggestion-button {
-    animation: fadeIn 0.3s ease-out;
-}
-       .markdown-content table {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 16px 0;
-  background: rgba(248, 250, 252, 0.8);
-  border-radius: 8px;
-  overflow: hidden;
-  border: 1px solid rgba(203, 213, 225, 0.4);
-}
-.markdown-content th {
-  background: linear-gradient(to right, rgba(59, 130, 246, 0.08), rgba(99, 102, 241, 0.08));
-  padding: 12px;
-  text-align: left;
-  font-weight: 600;
-  border-bottom: 2px solid rgba(148, 163, 184, 0.2);
-  color: #1e293b;
-}
-.markdown-content td {
-  padding: 10px 12px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
-}
-.markdown-content tr:last-child td {
-  border-bottom: none;
-}
-.markdown-content tr:hover {
-  background: rgba(59, 130, 246, 0.05);
-}
-.markdown-content h2, .markdown-content h3 {
-  margin-top: 20px;
-  margin-bottom: 12px;
-  font-weight: 600;
-}
-.markdown-content ul, .markdown-content ol {
-  margin: 12px 0;
-  padding-left: 24px;
-}
-.markdown-content p {
-  margin: 8px 0;
-}
-.markdown-content code {
-  background: rgba(59, 130, 246, 0.1);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-family: monospace;
-}
-.markdown-content a {
-  color: #2563eb;
-  text-decoration: underline;
-  transition: color 0.2s ease;
-}
-.markdown-content a:hover {
-  color: #1d4ed8;
-  text-decoration: underline;
-}
-.markdown-content {
-    transition: all 0.1s ease-out;
-}
-        @keyframes rotate {
-            100% { transform: rotate(360deg); }
-        }
-        .gemini-gradient-text {
-            background: linear-gradient(to right, #4285f4, #9b72cb, #d96570);
-            background-clip: text;
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-size: 200% auto;
-            animation: gradientMove 3s linear infinite;
-        }
-        @keyframes gradientMove {
-            0% { background-position: 0% 50%; }
-            50% { background-position: 100% 50%; }
-            100% { background-position: 0% 50%; }
-        }
-        .gemini-spinner {
-            position: relative;
-            width: 24px;
-            height: 24px;
-            border-radius: 50%;
-            /* Thinner, sharper gradient ring */
-            background: conic-gradient(from 0deg, #4285f4, #9b72cb, #d96570, #4285f4);
-            animation: rotate 1.5s linear infinite;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 0 15px rgba(66, 133, 244, 0.3); /* Add the "Glow" */
-        }
-        .gemini-spinner::before {
-            content: '';
-            position: absolute;
-            inset: 2px; /* Thinner border (was 3px) */
-            background: #fff;
-            border-radius: 50%;
-        }
-        /* This makes the text shimmer like a rainbow instead of just pulsing */
-        .thinking-text {
-            background: linear-gradient(90deg, #4285f4, #9b72cb, #d96570, #4285f4);
-            background-size: 200% auto;
-            background-clip: text;
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            animation: shine 3s linear infinite;
-            font-weight: 500;
-        }
-        @keyframes shine {
-            to { background-position: 200% center; }
-        }
-
         body {
             margin: 0;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
         }
-
-        /* --- MODERN SCROLLBAR STYLES --- */
-        /* For Webkit browsers (Chrome, Edge, Safari) */
         ::-webkit-scrollbar {
-            width: 6px; /* Very thin */
+            width: 6px;
         }
         ::-webkit-scrollbar-track {
             background: transparent;
         }
         ::-webkit-scrollbar-thumb {
-            background-color: rgba(156, 163, 175, 0.5); /* Semi-transparent gray */
-            border-radius: 20px; /* Fully rounded */
+            background-color: rgba(156, 163, 175, 0.5);
+            border-radius: 20px;
         }
         ::-webkit-scrollbar-thumb:hover {
             background-color: rgba(107, 114, 128, 0.8);
         }
-        /* Firefox */
         * {
             scrollbar-width: thin;
             scrollbar-color: rgba(156, 163, 175, 0.5) transparent;
@@ -156,31 +36,13 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+        const { useState, useEffect } = React;
 
-        // Lucide React icons as components
-        const Send = () => (
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="m22 2-7 20-4-9-9-4Z"/>
-                <path d="M22 2 11 13"/>
-            </svg>
-        );
-
+        // ===== ICONS =====
         const User = () => (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
                 <circle cx="12" cy="7" r="4"/>
-            </svg>
-        );
-
-        const Bot = () => (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 8V4H8"/>
-                <rect width="16" height="12" x="4" y="8" rx="2"/>
-                <path d="M2 14h2"/>
-                <path d="M20 14h2"/>
-                <path d="M15 13v2"/>
-                <path d="M9 13v2"/>
             </svg>
         );
 
@@ -197,40 +59,12 @@
             </svg>
         );
 
-        const Calendar = () => (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect width="18" height="18" x="3" y="4" rx="2" ry="2"/>
-                <line x1="16" x2="16" y1="2" y2="6"/>
-                <line x1="8" x2="8" y1="2" y2="6"/>
-                <line x1="3" x2="21" y1="10" y2="10"/>
-            </svg>
-        );
-
-        const BarChart3 = () => (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 3v18h18"/>
-                <path d="M18 17V9"/>
-                <path d="M13 17V5"/>
-                <path d="M8 17v-3"/>
-            </svg>
-        );
-
         const BookOpen = () => (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
                 <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
             </svg>
         );
-
-        const CalendarCheck = () => (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect width="18" height="18" x="3" y="4" rx="2" ry="2"/>
-        <line x1="16" x2="16" y1="2" y2="6"/>
-        <line x1="8" x2="8" y1="2" y2="6"/>
-        <line x1="3" x2="21" y1="10" y2="10"/>
-        <path d="m9 16 2 2 4-4"/>
-    </svg>
-);
 
         const Eye = () => (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -259,58 +93,16 @@
             </svg>
         );
 
-        const GeminiSpinner = () => (
-            <div className="gemini-spinner">
-                {/* Optional: Add the sparkle icon inside if you want */}
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="url(#grad1)" style={{zIndex: 10}}>
-                   <defs>
-                       <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="0%">
-                           <stop offset="0%" style={{stopColor:"#4285f4", stopOpacity:1}} />
-                           <stop offset="100%" style={{stopColor:"#d96570", stopOpacity:1}} />
-                       </linearGradient>
-                   </defs>
-                   <path d="M12 2L15 9L22 12L15 15L12 22L9 15L2 12L9 9L12 2Z" />
-                </svg>
-            </div>
-        );
-
-        const ThinkingIndicator = () => {
-            const [text, setText] = useState("Thinking...");
-            // Cycle through thoughts
-            useEffect(() => {
-                const thoughts = [
-                    "Thinking...",
-                    "Analyzing query...", 
-                    "Checking VTOP data...",
-                    "Formulating response..."
-                ];
-                let index = 0;
-                const interval = setInterval(() => {
-                    index = (index + 1) % thoughts.length;
-                    setText(thoughts[index]);
-                }, 1500);
-                return () => clearInterval(interval);
-            }, []);
-
-            return (
-                <div className="flex items-center space-x-3 p-1">
-                    <GeminiSpinner />
-                    {/* Updated class name here for the shimmer effect */}
-                    <span className="text-sm thinking-text">{text}</span>
-                </div>
-            );
-        };
-
+        // ===== PAPERS INTERFACE =====
         const PapersInterface = ({ onBack }) => {
-            const [courseCode, setCourseCode] = useState('');
             const [courseName, setCourseName] = useState('');
             const [paperType, setPaperType] = useState('all');
             const [searchResults, setSearchResults] = useState([]);
             const [isLoading, setIsLoading] = useState(false);
-
             const [errorMessage, setErrorMessage] = useState(null);
+
             const handleSearch = async () => {
-                if (!courseCode && !courseName) return;
+                if (!courseName) return;
                 
                 setIsLoading(true);
                 setErrorMessage(null);
@@ -319,7 +111,7 @@
                     const response = await fetch('/api/papers/search', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ courseCode, courseName, paperType })
+                        body: JSON.stringify({ courseName, paperType })
                     });
                     const data = await response.json();
                     
@@ -330,8 +122,7 @@
                         const retryTime = new Date(data.error.retryAfter);
                         const minutesToRetry = Math.ceil((retryTime - new Date()) / 60000);
                         setErrorMessage(
-                            `GitHub API rate limit exceeded. Please try again in ${minutesToRetry} minutes or try fewer searches. ` +
-                            `This limit helps ensure fair usage of the service.`
+                            `GitHub API rate limit exceeded. Please try again in ${minutesToRetry} minutes.`
                         );
                         setSearchResults([]);
                     } else {
@@ -351,111 +142,112 @@
                 window.open(url, '_blank');
             };
 
-            return React.createElement('div', { className: "min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50" }, [
-                // Header
-                React.createElement('div', { 
-                    className: "bg-white/80 backdrop-blur-sm border-b border-gray-200 sticky top-0 z-10",
-                    key: 'header'
-                }, [
-                    React.createElement('div', { className: "max-w-4xl mx-auto px-4 py-4" }, [
-                        React.createElement('div', { className: "flex items-center justify-between" }, [
-                            React.createElement('div', { className: "flex items-center space-x-3" }, [
-                                React.createElement('div', { 
-                                    className: "w-10 h-10 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg flex items-center justify-center" 
-                                }, React.createElement(BookOpen, { className: "w-6 h-6 text-white" })),
-                                React.createElement('h1', { className: "text-xl font-bold text-gray-900" }, "Previous Year Papers")
-                            ]),
-                            React.createElement('button', {
-                                onClick: onBack,
-                                className: "text-sm text-gray-500 hover:text-gray-700 px-3 py-1 rounded-lg border border-gray-300 hover:border-gray-400 transition-colors"
-                            }, "Back to Home")
-                        ])
-                    ])
-                ]),
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+                    {/* Header */}
+                    <div className="bg-white/80 backdrop-blur-sm border-b border-gray-200 sticky top-0 z-10">
+                        <div className="max-w-4xl mx-auto px-4 py-4">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center space-x-3">
+                                    <div className="w-10 h-10 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg flex items-center justify-center">
+                                        <BookOpen className="w-6 h-6 text-white" />
+                                    </div>
+                                    <h1 className="text-xl font-bold text-gray-900">Previous Year Papers</h1>
+                                </div>
+                                <button
+                                    onClick={onBack}
+                                    className="text-sm text-gray-500 hover:text-gray-700 px-3 py-1 rounded-lg border border-gray-300 hover:border-gray-400 transition-colors"
+                                >
+                                    Back to Home
+                                </button>
+                            </div>
+                        </div>
+                    </div>
 
-                // Search Interface
-                React.createElement('div', { className: "max-w-4xl mx-auto p-4", key: 'search' }, [
-                    React.createElement('div', { className: "bg-white rounded-xl shadow-sm p-6 space-y-4" }, [
-                        // Search Inputs
-                        React.createElement('div', { className: "grid grid-cols-1 md:grid-cols-2 gap-4" }, [
-                            // Course Name Input
-                            React.createElement('div', {}, [
-                                React.createElement('label', { className: "block text-sm font-medium text-gray-700 mb-1" }, "Course Name"),
-                                React.createElement('input', {
-                                    type: "text",
-                                    value: courseName,
-                                    onChange: (e) => setCourseName(e.target.value),
-                                    placeholder: "e.g. AWS",
-                                    className: "w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                })
-                            ]),
-                            // Paper Type Dropdown
-                            React.createElement('div', {}, [
-                                React.createElement('label', { className: "block text-sm font-medium text-gray-700 mb-1" }, "Paper Type"),
-                                React.createElement('select', {
-                                    value: paperType,
-                                    onChange: (e) => setPaperType(e.target.value),
-                                    className: "w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                }, [
-                                    React.createElement('option', { value: "all" }, "All Papers"),
-                                    React.createElement('option', { value: "cat1" }, "CAT 1"),
-                                    React.createElement('option', { value: "cat2" }, "CAT 2"),
-                                    React.createElement('option', { value: "fat" }, "FAT")
-                                ])
-                            ])
-                        ]),
-                        // Search Button
-                        React.createElement('div', { className: "flex justify-end" }, [
-                            React.createElement('button', {
-                                onClick: handleSearch,
-                                disabled: (!courseCode && !courseName) || isLoading,
-                                className: "px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center space-x-2"
-                            }, [
-                                isLoading && React.createElement(Loader2),
-                                React.createElement('span', {}, "Search Papers")
-                            ])
-                        ])
-                    ]),
+                    {/* Search Interface */}
+                    <div className="max-w-4xl mx-auto p-4">
+                        <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Course Name</label>
+                                    <input
+                                        type="text"
+                                        value={courseName}
+                                        onChange={(e) => setCourseName(e.target.value)}
+                                        placeholder="e.g. AWS, DSA, DBMS"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Paper Type</label>
+                                    <select
+                                        value={paperType}
+                                        onChange={(e) => setPaperType(e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    >
+                                        <option value="all">All Papers</option>
+                                        <option value="cat1">CAT 1</option>
+                                        <option value="cat2">CAT 2</option>
+                                        <option value="fat">FAT</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="flex justify-end">
+                                <button
+                                    onClick={handleSearch}
+                                    disabled={!courseName || isLoading}
+                                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center space-x-2"
+                                >
+                                    {isLoading && <Loader2 />}
+                                    <span>Search Papers</span>
+                                </button>
+                            </div>
+                        </div>
 
-                    // Error Message
-                    errorMessage && React.createElement('div', {
-                        className: "mt-6 p-4 bg-red-50 border border-red-200 rounded-lg",
-                        key: 'error-message'
-                    }, [
-                        React.createElement('div', { className: "flex items-center space-x-2 text-red-800" }, [
-                            React.createElement('span', { className: "font-medium" }, "⚠️ Error"),
-                        ]),
-                        React.createElement('p', { className: "mt-1 text-sm text-red-700" }, errorMessage),
-                    ]),
+                        {/* Error Message */}
+                        {errorMessage && (
+                            <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+                                <div className="flex items-center space-x-2 text-red-800">
+                                    <span className="font-medium">⚠️ Error</span>
+                                </div>
+                                <p className="mt-1 text-sm text-red-700">{errorMessage}</p>
+                            </div>
+                        )}
 
-                    // Results Section
-                    searchResults.results?.length > 0 && React.createElement('div', { className: "mt-6 space-y-4" },
-                        searchResults.results.map((paper, index) => 
-                            React.createElement('div', {
-                                key: index,
-                                className: "bg-white rounded-lg shadow-sm p-4 hover:shadow-md transition-shadow"
-                            }, [
-                                React.createElement('div', { className: "flex items-center justify-between" }, [
-                                    React.createElement('div', {}, [
-                                        React.createElement('h3', { className: "font-medium text-gray-900" }, paper.title),
-                                        React.createElement('p', { className: "text-sm text-gray-500" }, 
-                                            `${paper.courseCode} • ${paper.type} • ${paper.year}`
-                                        )
-                                    ]),
-                                    React.createElement('button', {
-                                        onClick: () => openPaper(paper.url),
-                                        className: "px-3 py-1 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                    }, "View Paper")
-                                ])
-                            ])
-                        )
-                    )
-                ])
-            ]);
+                        {/* Results */}
+                        {searchResults.results?.length > 0 && (
+                            <div className="mt-6 space-y-4">
+                                {searchResults.results.map((paper, index) => (
+                                    <div
+                                        key={index}
+                                        className="bg-white rounded-lg shadow-sm p-4 hover:shadow-md transition-shadow"
+                                    >
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <h3 className="font-medium text-gray-900">{paper.title}</h3>
+                                                <p className="text-sm text-gray-500">
+                                                    {paper.courseCode} • {paper.type} • {paper.year}
+                                                </p>
+                                            </div>
+                                            <button
+                                                onClick={() => openPaper(paper.url)}
+                                                className="px-3 py-1 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                            >
+                                                View Paper
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
         };
 
-        const LoginForm = ({ onLogin, isLoading, error }) => {
-            const [authMode, setAuthMode] = useState(null); // 'demo' or 'custom' or 'papers'
+        // ===== LOGIN FORM =====
+        const LoginForm = ({ onLogin, isLoading, error, setRedirectTarget }) => {
+            const [authMode, setAuthMode] = useState(null);
             const [credentials, setCredentials] = useState({ username: '', password: '', campus: 'vellore' });
             const [showPassword, setShowPassword] = useState(false);
 
@@ -474,269 +266,259 @@
             };
 
             if (authMode === 'papers') {
-                return React.createElement(PapersInterface, {
-                    onBack: () => {
-                        setAuthMode(null);
-                        setShowLoginForm(true);
-                    }
-                });
+                return <PapersInterface onBack={() => setAuthMode(null)} />;
             }
 
             if (!authMode) {
-                return React.createElement('div', { className: "min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center p-4" }, [
-                    React.createElement('div', { className: "max-w-md w-full", key: 'auth-selection' }, [
-                        React.createElement('div', { className: "bg-white rounded-2xl shadow-xl p-8", key: 'card' }, [
-                            React.createElement('div', { className: "text-center mb-8", key: 'header' }, [
-                                React.createElement('div', { className: "w-16 h-16 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4" }, 
-                                    React.createElement(GraduationCap, { className: "w-8 h-8 text-white" })
-                                ),
-                                React.createElement('h1', { className: "text-2xl font-bold text-gray-900 mb-2" }, "Welcome to VTOP Assistant"),
-                                React.createElement('p', { className: "text-gray-600" }, "Choose how you'd like to proceed")
-                            ]),
-                            React.createElement('div', { className: "space-y-4", key: 'options' }, [
-                                // Use Demo Account Button
-                                React.createElement('button', {
-                                    onClick: () => setAuthMode('demo'),
-                                    className: "w-full p-4 border-2 border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all duration-200 text-left group"
-                                }, [
-                                    React.createElement('div', { className: "flex items-center space-x-3" }, [
-                                        React.createElement('div', { className: "w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center group-hover:bg-green-200 transition-colors" },
-                                            React.createElement(Demo, { className: "w-6 h-6 text-green-600" })
-                                        ),
-                                        React.createElement('div', { className: "flex-1" }, [
-                                            React.createElement('h3', { className: "font-semibold text-gray-900 mb-1" }, "Use Demo Account"),
-                                            React.createElement('p', { className: "text-sm text-gray-600" }, "For recruiters, students from other universities, or anyone exploring the features")
-                                        ])
-                                    ])
-                                ]),
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center p-4">
+                        <div className="max-w-md w-full">
+                            <div className="bg-white rounded-2xl shadow-xl p-8">
+                                <div className="text-center mb-8">
+                                    <div className="w-16 h-16 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                                        <GraduationCap className="w-8 h-8 text-white" />
+                                    </div>
+                                    <h1 className="text-2xl font-bold text-gray-900 mb-2">Welcome to VTOP Assistant</h1>
+                                    <p className="text-gray-600">Choose how you'd like to proceed</p>
+                                </div>
+                                <div className="space-y-4">
+                                    {/* Demo Account */}
+                                    <button
+                                        onClick={() => {
+                                            setAuthMode('demo');
+                                            setRedirectTarget('chat');
+                                        }}
+                                        className="w-full p-4 border-2 border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all duration-200 text-left group"
+                                    >
+                                        <div className="flex items-center space-x-3">
+                                            <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center group-hover:bg-green-200 transition-colors">
+                                                <Demo className="w-6 h-6 text-green-600" />
+                                            </div>
+                                            <div className="flex-1">
+                                                <h3 className="font-semibold text-gray-900 mb-1">Use Demo Account</h3>
+                                                <p className="text-sm text-gray-600">For recruiters, students from other universities, or anyone exploring</p>
+                                            </div>
+                                        </div>
+                                    </button>
 
-                                // VTOP Login Button
-                                React.createElement('button', {
-                                    onClick: () => {
-                                        setAuthMode('custom');
-                                        localStorage.removeItem('redirectToHub');
-                                    },
-                                    className: "w-full p-4 border-2 border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all duration-200 text-left group"
-                                }, [
-                                    React.createElement('div', { className: "flex items-center space-x-3" }, [
-                                        React.createElement('div', { className: "w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center group-hover:bg-blue-200 transition-colors" },
-                                            React.createElement(User, { className: "w-6 h-6 text-blue-600" })
-                                        ),
-                                        React.createElement('div', { className: "flex-1" }, [
-                                            React.createElement('h3', { className: "font-semibold text-gray-900 mb-1" }, "Use My VTOP Account"),
-                                            React.createElement('p', { className: "text-sm text-gray-600" }, "VIT students can use their own credentials to access their real academic data")
-                                        ])
-                                    ])
-                                ]),
+                                    {/* VTOP Login */}
+                                    <button
+                                        onClick={() => {
+                                            setAuthMode('custom');
+                                            setRedirectTarget('chat');
+                                        }}
+                                        className="w-full p-4 border-2 border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all duration-200 text-left group"
+                                    >
+                                        <div className="flex items-center space-x-3">
+                                            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center group-hover:bg-blue-200 transition-colors">
+                                                <User className="w-6 h-6 text-blue-600" />
+                                            </div>
+                                            <div className="flex-1">
+                                                <h3 className="font-semibold text-gray-900 mb-1">Use My VTOP Account</h3>
+                                                <p className="text-sm text-gray-600">VIT students can use their own credentials</p>
+                                            </div>
+                                        </div>
+                                    </button>
 
-                                // Direct Data Hub Button
-                                React.createElement('button', {
-                                    onClick: () => {
-                                        setAuthMode('custom');
-                                        localStorage.setItem('redirectToHub', 'true');
-                                    },
-                                    className: "w-full p-4 border-2 border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all duration-200 text-left group"
-                                }, [
-                                    React.createElement('div', { className: "flex items-center space-x-3" }, [
-                                        React.createElement('div', { 
-                                            className: "w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center group-hover:bg-indigo-200 transition-colors"
-                                        }, React.createElement(GraduationCap, { className: "w-6 h-6 text-indigo-600" })),
-                                        React.createElement('div', { className: "flex-1" }, [
-                                            React.createElement('h3', { className: "font-semibold text-gray-900 mb-1" }, "Direct Data Hub"),
-                                            React.createElement('p', { className: "text-sm text-gray-600" }, "Instant access to all your VTOP data without AI chat - perfect for quick lookups")
-                                        ])
-                                    ])
-                                ]),
+                                    {/* Direct Data Hub */}
+                                    <button
+                                        onClick={() => {
+                                            setAuthMode('custom');
+                                            setRedirectTarget('hub');
+                                        }}
+                                        className="w-full p-4 border-2 border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all duration-200 text-left group"
+                                    >
+                                        <div className="flex items-center space-x-3">
+                                            <div className="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center group-hover:bg-indigo-200 transition-colors">
+                                                <GraduationCap className="w-6 h-6 text-indigo-600" />
+                                            </div>
+                                            <div className="flex-1">
+                                                <h3 className="font-semibold text-gray-900 mb-1">Direct Data Hub</h3>
+                                                <p className="text-sm text-gray-600">Instant access without AI chat - perfect for quick lookups</p>
+                                            </div>
+                                        </div>
+                                    </button>
 
-                                // Previous Year Papers Button
-                                React.createElement('button', {
-                                    onClick: () => setAuthMode('papers'),
-                                    className: "w-full p-4 border-2 border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all duration-200 text-left group"
-                                }, [
-                                    React.createElement('div', { className: "flex items-center space-x-3" }, [
-                                        React.createElement('div', { 
-                                            className: "w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center group-hover:bg-purple-200 transition-colors"
-                                        }, React.createElement(BookOpen, { className: "w-6 h-6 text-purple-600" })),
-                                        React.createElement('div', { className: "flex-1" }, [
-                                            React.createElement('h3', { className: "font-semibold text-gray-900 mb-1" }, "Previous Year Papers"),
-                                            React.createElement('p', { className: "text-sm text-gray-600" }, "Access past exam papers from VIT courses")
-                                        ])
-                                    ])
-                                ])
-                            ])
-                        ])
-                    ])
-                ]);
+                                    {/* Previous Year Papers */}
+                                    <button
+                                        onClick={() => setAuthMode('papers')}
+                                        className="w-full p-4 border-2 border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all duration-200 text-left group"
+                                    >
+                                        <div className="flex items-center space-x-3">
+                                            <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center group-hover:bg-purple-200 transition-colors">
+                                                <BookOpen className="w-6 h-6 text-purple-600" />
+                                            </div>
+                                            <div className="flex-1">
+                                                <h3 className="font-semibold text-gray-900 mb-1">Previous Year Papers</h3>
+                                                <p className="text-sm text-gray-600">Access past exam papers from VIT courses</p>
+                                            </div>
+                                        </div>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
             }
 
-            return React.createElement('div', { className: "min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center p-4" }, [
-                React.createElement('div', { className: "max-w-md w-full", key: 'login-form' }, [
-                    React.createElement('div', { className: "bg-white rounded-2xl shadow-xl p-8", key: 'card' }, [
-                        React.createElement('div', { className: "text-center mb-8", key: 'header' }, [
-                            React.createElement('div', { className: "w-16 h-16 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4" }, 
-                                React.createElement(GraduationCap, { className: "w-8 h-8 text-white" })
-                            ),
-                            React.createElement('h1', { className: "text-2xl font-bold text-gray-900 mb-2" }, 
-                                authMode === 'demo' ? "Demo Mode" : "Login to VTOP"
-                            ),
-                            React.createElement('p', { className: "text-gray-600" }, 
-                                authMode === 'demo' ? 
-                                "Demo mode uses hardcoded VTOP credentials to fetch and display real student data. This is actual live data from VTOP, not a database - perfect for recruiters and visitors to explore features." :
-                                "Enter your VTOP credentials to access your real data"
-                            )
-                        ]),
-                        
-                        React.createElement('form', { onSubmit: handleLogin, className: "space-y-4", key: 'form' }, [
-                            authMode === 'custom' ? [
-                                React.createElement('div', { key: 'campus' }, [
-                                    React.createElement('label', { className: "block text-sm font-medium text-gray-700 mb-2" }, "Campus"),
-                                    React.createElement('div', { className: "flex space-x-4" }, [
-                                        React.createElement('label', { className: "flex items-center space-x-2 cursor-pointer" }, [
-                                            React.createElement('input', {
-                                                type: 'radio',
-                                                name: 'campus',
-                                                value: 'vellore',
-                                                checked: credentials.campus === 'vellore',
-                                                onChange: (e) => setCredentials(prev => ({ ...prev, campus: e.target.value })),
-                                                className: "w-4 h-4 text-blue-600 focus:ring-blue-500",
-                                                disabled: isLoading
-                                            }),
-                                            React.createElement('span', { className: "text-sm text-gray-700" }, "Vellore")
-                                        ]),
-                                        React.createElement('label', { className: "flex items-center space-x-2 cursor-pointer" }, [
-                                            React.createElement('input', {
-                                                type: 'radio',
-                                                name: 'campus',
-                                                value: 'chennai',
-                                                checked: credentials.campus === 'chennai',
-                                                onChange: (e) => setCredentials(prev => ({ ...prev, campus: e.target.value })),
-                                                className: "w-4 h-4 text-blue-600 focus:ring-blue-500",
-                                                disabled: isLoading
-                                            }),
-                                            React.createElement('span', { className: "text-sm text-gray-700" }, "Chennai")
-                                        ])
-                                    ])
-                                ]),
-                                React.createElement('div', { key: 'username' }, [
-                                    React.createElement('label', { className: "block text-sm font-medium text-gray-700 mb-2" }, "Username/Registration Number"),
-                                    React.createElement('input', {
-                                        type: 'text',
-                                        value: credentials.username,
-                                        onChange: (e) => setCredentials(prev => ({ ...prev, username: e.target.value })),
-                                        className: "w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent",
-                                        placeholder: "Enter your VTOP username",
-                                        required: true,
-                                        disabled: isLoading
-                                    })
-                                ]),
-                                React.createElement('div', { key: 'password' }, [
-                                    React.createElement('label', { className: "block text-sm font-medium text-gray-700 mb-2" }, "Password"),
-                                    React.createElement('div', { className: "relative" }, [
-                                        React.createElement('input', {
-                                            type: showPassword ? 'text' : 'password',
-                                            value: credentials.password,
-                                            onChange: (e) => setCredentials(prev => ({ ...prev, password: e.target.value })),
-                                            className: "w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent",
-                                            placeholder: "Enter your VTOP password",
-                                            required: true,
-                                            disabled: isLoading
-                                        }),
-                                        React.createElement('button', {
-                                            type: 'button',
-                                            onClick: () => setShowPassword(!showPassword),
-                                            className: "absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600",
-                                            disabled: isLoading
-                                        }, showPassword ? React.createElement(EyeOff) : React.createElement(Eye))
-                                    ])
-                                ]),
-                                React.createElement('div', { 
-                                    className: "bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-800 mt-3",
-                                    key: 'privacy-notice' 
-                                }, [
-                                    React.createElement('div', { className: "flex items-start space-x-2" }, [
-                                        React.createElement('div', {}, [
-                                            React.createElement('p', { className: "font-medium mb-1" }, "🔒 Your Privacy is Protected"),
-                                            React.createElement('p', {}, "• Credentials used only for this session to connect to VTOP"),
-                                            React.createElement('p', {}, "• No passwords stored, saved, or logged anywhere"),
-                                            React.createElement('p', {}, "• All data cleared when you logout"),
-                                            React.createElement('p', {}, "• Your academic information is never stored or shared"),
-                                            React.createElement('p', {}, "• You can save credentials in your browser's password manager for convenience")
-                                        ])
-                                    ])
-                                ])
-                            ] : [
-                                React.createElement('div', { 
-                                    className: "bg-green-50 border border-green-200 rounded-lg p-4", 
-                                    key: 'demo-info' 
-                                }, [
-                                    React.createElement('div', { className: "flex items-center space-x-2 text-green-800" }, [
-                                        React.createElement(Demo, { className: "w-5 h-5" }),
-                                        React.createElement('span', { className: "font-medium" }, "Demo Mode Selected")
-                                    ]),
-                                    React.createElement('p', { className: "text-sm text-green-700 mt-1" }, 
-                                        "You'll see real VTOP data from an actual VIT student account."
-                                    )
-                                ])
-                            ],
-
-                            // Error Display
-                            error && React.createElement('div', { 
-                                className: "bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-600 mb-2 animate-pulse",
-                                key: 'error-msg' 
-                            }, [
-                                React.createElement('div', { className: "flex items-center space-x-2" }, [
-                                    React.createElement('span', { className: "font-bold" }, "⚠️"),
-                                    React.createElement('span', {}, error)
-                                ])
-                            ]),
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center p-4">
+                    <div className="max-w-md w-full">
+                        <div className="bg-white rounded-2xl shadow-xl p-8">
+                            <div className="text-center mb-8">
+                                <div className="w-16 h-16 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <GraduationCap className="w-8 h-8 text-white" />
+                                </div>
+                                <h1 className="text-2xl font-bold text-gray-900 mb-2">
+                                    {authMode === 'demo' ? "Demo Mode" : "Login to VTOP"}
+                                </h1>
+                                <p className="text-gray-600">
+                                    {authMode === 'demo' ? 
+                                        "Demo mode uses hardcoded VTOP credentials to fetch and display real student data. This is actual live data from VTOP, not a database." :
+                                        "Enter your VTOP credentials to access your data"}
+                                </p>
+                            </div>
                             
-                            React.createElement('div', { className: "flex space-x-3", key: 'buttons' }, [
-                                React.createElement('button', {
-                                    type: 'button',
-                                    onClick: () => {
-                                        setAuthMode(null);
-                                        localStorage.removeItem('redirectToHub');
-                                    },
-                                    className: "flex-1 py-3 px-4 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50",
-                                    disabled: isLoading
-                                }, "Back"),
-                                React.createElement('button', {
-                                    type: 'submit',
-                                    disabled: isLoading || (authMode === 'custom' && (!credentials.username || !credentials.password)),
-                                    className: "flex-1 py-3 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center justify-center space-x-2"
-                                }, [
-                                    isLoading && React.createElement(Loader2, { key: 'loader' }),
-                                    React.createElement('span', { key: 'text' }, 
-                                        isLoading ? 'Connecting...' : 
-                                        authMode === 'demo' ? 'Start Demo' : 'Login'
-                                    )
-                                ])
-                            ])
-                        ])
-                    ])
-                ])
-            ]);
+                            <form onSubmit={handleLogin} className="space-y-4">
+                                {authMode === 'custom' ? (
+                                    <>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">Campus</label>
+                                            <div className="flex space-x-4">
+                                                <label className="flex items-center space-x-2 cursor-pointer">
+                                                    <input
+                                                        type="radio"
+                                                        name="campus"
+                                                        value="vellore"
+                                                        checked={credentials.campus === 'vellore'}
+                                                        onChange={(e) => setCredentials(prev => ({ ...prev, campus: e.target.value }))}
+                                                        className="w-4 h-4 text-blue-600 focus:ring-blue-500"
+                                                        disabled={isLoading}
+                                                    />
+                                                    <span className="text-sm text-gray-700">Vellore</span>
+                                                </label>
+                                                <label className="flex items-center space-x-2 cursor-pointer">
+                                                    <input
+                                                        type="radio"
+                                                        name="campus"
+                                                        value="chennai"
+                                                        checked={credentials.campus === 'chennai'}
+                                                        onChange={(e) => setCredentials(prev => ({ ...prev, campus: e.target.value }))}
+                                                        className="w-4 h-4 text-blue-600 focus:ring-blue-500"
+                                                        disabled={isLoading}
+                                                    />
+                                                    <span className="text-sm text-gray-700">Chennai</span>
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">Username/Registration Number</label>
+                                            <input
+                                                type="text"
+                                                value={credentials.username}
+                                                onChange={(e) => setCredentials(prev => ({ ...prev, username: e.target.value }))}
+                                                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                placeholder="Enter your VTOP username"
+                                                required
+                                                disabled={isLoading}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
+                                            <div className="relative">
+                                                <input
+                                                    type={showPassword ? 'text' : 'password'}
+                                                    value={credentials.password}
+                                                    onChange={(e) => setCredentials(prev => ({ ...prev, password: e.target.value }))}
+                                                    className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                    placeholder="Enter your VTOP password"
+                                                    required
+                                                    disabled={isLoading}
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowPassword(!showPassword)}
+                                                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                                                    disabled={isLoading}
+                                                >
+                                                    {showPassword ? <EyeOff /> : <Eye />}
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-800 mt-3">
+                                            <div className="flex items-start space-x-2">
+                                                <div>
+                                                    <p className="font-medium mb-1">🔒 Your Privacy is Protected</p>
+                                                    <p>• Credentials used only for this session to connect to VTOP</p>
+                                                    <p>• No passwords stored, saved, or logged anywhere</p>
+                                                    <p>• All data cleared when you logout</p>
+                                                    <p>• Your academic information is never stored or shared</p>
+                                                    <p>• You can save credentials in your browser's password manager for convenience</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                                        <div className="flex items-center space-x-2 text-green-800">
+                                            <Demo className="w-5 h-5" />
+                                            <span className="font-medium">Demo Mode Selected</span>
+                                        </div>
+                                        <p className="text-sm text-green-700 mt-1">
+                                            You'll see real VTOP data from an actual VIT student account.
+                                        </p>
+                                    </div>
+                                )}
+
+                                {error && (
+                                    <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-600 mb-2 animate-pulse">
+                                        <div className="flex items-center space-x-2">
+                                            <span className="font-bold">⚠️</span>
+                                            <span>{error}</span>
+                                        </div>
+                                    </div>
+                                )}
+                                
+                                <div className="flex space-x-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => setAuthMode(null)}
+                                        className="flex-1 py-3 px-4 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
+                                        disabled={isLoading}
+                                    >
+                                        Back
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        disabled={isLoading || (authMode === 'custom' && (!credentials.username || !credentials.password))}
+                                        className="flex-1 py-3 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center justify-center space-x-2"
+                                    >
+                                        {isLoading && <Loader2 />}
+                                        <span>
+                                            {isLoading ? 'Connecting...' : 
+                                             authMode === 'demo' ? 'Start Demo' : 'Login'}
+                                        </span>
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            );
         };
 
-        const VTOPChatInterface = () => {
-            const [messages, setMessages] = useState([]);
-            const [inputValue, setInputValue] = useState('');
+        // ===== MAIN APP =====
+        const App = () => {
             const [isLoading, setIsLoading] = useState(false);
-            const [isLoggedIn, setIsLoggedIn] = useState(false);
-            const [loginStatus, setLoginStatus] = useState('idle');
-            const [isDemo, setIsDemo] = useState(false);
-            const [showLoginForm, setShowLoginForm] = useState(true);
-            const [sessionId, setSessionId] = useState(null);
-            const [authMode, setAuthMode] = useState(null);
             const [loginError, setLoginError] = useState(null);
-            const messagesEndRef = useRef(null);
+            const [sessionId, setSessionId] = useState(null);
+            const [redirectTarget, setRedirectTarget] = useState('chat'); // 'chat' or 'hub'
 
-            // Helper to generate secure ID
+            // Generate session ID helper
             const generateSessionId = () => {
                 if (window.crypto && window.crypto.randomUUID) {
                     return window.crypto.randomUUID();
                 }
-                // Fallback for older browsers
                 return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
                     var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
                     return v.toString(16);
@@ -744,564 +526,46 @@
             };
 
             useEffect(() => {
+                // Initialize session ID
                 const sid = localStorage.getItem('sessionId') || generateSessionId();
                 localStorage.setItem('sessionId', sid);
                 setSessionId(sid);
             }, []);
 
-            const scrollToBottom = () => {
-                messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-            };
-
-            useEffect(() => {
-                scrollToBottom();
-            }, [messages]);
-
-const handleLogin = async (loginData) => {
-    setLoginStatus('logging');
-    setIsLoading(true);
-    setLoginError(null);
-    
-    const welcomeMessage = loginData.useDemo ? 
-        '🔐 Connecting to VTOP and fetching live academic data...' :
-        '🔐 Logging into VTOP with your credentials...';
-
-    setMessages([{
-        id: Date.now(),
-        type: 'system',
-        content: welcomeMessage,
-        timestamp: new Date()
-    }]);
-
-    try {
-        const response = await fetch('/api/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...loginData, sessionId })
-        });
-        
-        const result = await response.json();
-        
-        if (result.success) {
-    setIsLoggedIn(true);
-    setIsDemo(result.isDemo);
-    setLoginStatus('success');
-    
-    // Check if should redirect to hub
-    const shouldRedirectToHub = localStorage.getItem('redirectToHub');
-    if (shouldRedirectToHub === 'true') {
-        localStorage.removeItem('redirectToHub');
-        window.location.href = '/hub.html';
-        return;
-    }
-            
-            setShowLoginForm(false);
-            
-            const successMessage = result.isDemo ? 
-                '✅ Connected to VTOP using demo credentials! You\'re viewing real-time data fetched from an actual student account. Ask me about CGPA, attendance, marks, or assignments.' :
-                '✅ Successfully logged into VTOP! You can now ask me about your CGPA, attendance, marks, or assignments,etc';
-                
-            setMessages(prev => [...prev, {
-                id: Date.now() + 1,
-                type: 'system',
-                content: successMessage,
-                timestamp: new Date()
-            }]);
-        } else {
-            setLoginStatus('failed');
-            setLoginError(result.message || 'Login failed. Please check your credentials.');
-            setMessages(prev => [...prev, {
-                id: Date.now() + 1,
-                type: 'system',
-                content: result.message ? `❌ ${result.message}` : '❌ Login failed. Please check your credentials and try again.',
-                timestamp: new Date()
-            }]);
-        }
-    } catch (error) {
-        setLoginStatus('failed');
-        setLoginError('Network error occurred. Please try again.');
-        setMessages(prev => [...prev, {
-            id: Date.now() + 1,
-            type: 'system',
-            content: '❌ Error connecting to VTOP backend. Please try again later.',
-            timestamp: new Date()
-        }]);
-    } finally {
-        setIsLoading(false);
-    }
-};
-            const handleLogout = async () => {
-                try {
-                    await fetch('/api/logout', { 
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ sessionId })
-                    });
-                    
-                    // SECURITY FIX: Generate new session ID on logout
-                    // This prevents the next user on the same PC from reusing the old session
-                    const newSid = generateSessionId();
-                    localStorage.setItem('sessionId', newSid);
-                    setSessionId(newSid);
-
-                    setIsLoggedIn(false);
-                    setIsDemo(false);
-                    setLoginStatus('idle');
-                    setShowLoginForm(true);
-                    setMessages([]);
-                    setInputValue('');
-                } catch (error) {
-                    console.error('Logout error:', error);
-                }
-            };
-
-            const handleSendMessage = async () => {
-                if (!inputValue.trim() || isLoading || !isLoggedIn) return;
-
-                const userMessage = {
-                    id: Date.now(),
-                    type: 'user',
-                    content: inputValue,
-                    timestamp: new Date()
-                };
-
-                setMessages(prev => [...prev, userMessage]);
-                const currentInput = inputValue;
-                setInputValue('');
+            const handleLogin = async (loginData) => {
                 setIsLoading(true);
-
-                const loadingMessage = {
-                    id: Date.now() + 1,
-                    type: 'bot',
-                    content: '',
-                    timestamp: new Date(),
-                    loading: true
-                };
-                setMessages(prev => [...prev, loadingMessage]);
+                setLoginError(null);
 
                 try {
-                    const response = await fetch('/api/chat', {
+                    const response = await fetch('/api/login', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ message: currentInput, sessionId })
+                        body: JSON.stringify({ ...loginData, sessionId })
                     });
-
-                    const reader = response.body.getReader();
-                    const decoder = new TextDecoder();
-                    let botMessageId = Date.now() + 2;
                     
-                    let streamBuffer = "";
-                    let displayedText = "";
-                    let isFirstChunk = true;
-                    let receivedData = null;
-                    let isStreamComplete = false;
-
-                    // Remove loading message and create placeholder
-                    setMessages(prev => {
-                        const filtered = prev.filter(msg => !msg.loading);
-                        return [...filtered, {
-                            id: botMessageId,
-                            type: 'bot',
-                            content: '',
-                            timestamp: new Date()
-                        }];
-                    });
-
-                    // ✨ GEMINI-STYLE SMOOTH TYPING EFFECT
-                    // Decouples network speed from reading speed for a silky smooth experience
-                    const typingInterval = setInterval(() => {
-                        if (displayedText.length < streamBuffer.length) {
-                            // Calculate dynamic typing speed based on backlog
-                            const backlog = streamBuffer.length - displayedText.length;
-                            let charsToAdd = 1;
-                            
-                            if (backlog > 200) charsToAdd = 10;
-                            else if (backlog > 100) charsToAdd = 5;
-                            else if (backlog > 30) charsToAdd = 3;
-                            else if (backlog > 10) charsToAdd = 2;
-                            
-                            displayedText += streamBuffer.substring(displayedText.length, displayedText.length + charsToAdd);
-                            
-                            setMessages(prev => prev.map(msg => 
-                                msg.id === botMessageId 
-                                    ? { ...msg, content: displayedText, data: receivedData } 
-                                    : msg
-                            ));
-                        } else if (isStreamComplete) {
-                            // Only stop when both stream is done AND we've shown all text
-                            clearInterval(typingInterval);
-                        }
-                    }, 20); // 50 updates per second
-
-                    while (true) {
-                        const { done, value } = await reader.read();
-                        if (done) {
-                            isStreamComplete = true;
-                            break;
-                        }
-
-                        const text = decoder.decode(value, { stream: true });
-                        
-                        // Check if first chunk contains DATA JSON
-                        if (isFirstChunk && text.includes('{"type":"DATA"')) {
-                            const lines = text.split('\n\n');
-                            try {
-                                const dataPart = JSON.parse(lines[0]);
-                                receivedData = dataPart.payload;
-                                streamBuffer += lines.slice(1).join('\n\n');
-                            } catch (e) {
-                                streamBuffer += text;
-                            }
-                            isFirstChunk = false;
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        // Redirect based on selection
+                        if (redirectTarget === 'hub') {
+                            window.location.href = '/hub.html';
                         } else {
-                            streamBuffer += text;
+                            window.location.href = '/chat.html';
                         }
+                    } else {
+                        setLoginError(result.message || 'Login failed. Please check your credentials.');
                     }
-
                 } catch (error) {
-                    setMessages(prev => {
-                        const filteredMessages = prev.filter(msg => !msg.loading);
-                        return [...filteredMessages, {
-                            id: Date.now() + 2,
-                            type: 'bot',
-                            content: '❌ Sorry, I encountered an error processing your request. Please try again.',
-                            timestamp: new Date()
-                        }];
-                    });
-                }
-
-                setIsLoading(false);
-            };
-
-            const handleKeyPress = (e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSendMessage();
+                    setLoginError('Network error occurred. Please try again.');
+                } finally {
+                    setIsLoading(false);
                 }
             };
 
-            const suggestedQueries = [
-    { text: "What's my CGPA?", icon: GraduationCap },
-    { text: "Show my attendance", icon: Calendar },
-    { text: "Get my marks", icon: BarChart3 },
-    { text: "Show my assignments", icon: BookOpen },
-    { text: "Show exam schedule", icon: CalendarCheck }
-];
-
-            const handleSuggestionClick = (query) => {
-                if (!isLoggedIn || isLoading) return;
-                setInputValue(query);
-            };
-
-            const formatMessage = (message) => {
-  const htmlContent = marked.parse(message.content || '');
-  return React.createElement('div', { 
-    className: "markdown-content text-sm leading-relaxed",
-    dangerouslySetInnerHTML: { __html: htmlContent }
-  });
-};
-
-            // ===== SMART SUGGESTION SYSTEM =====
-            // All available functions grouped by category
-            const SUGGESTION_CONFIG = {
-                // Category definitions with icons
-                categories: {
-                    academic: { name: 'Academic', icon: GraduationCap },
-                    schedule: { name: 'Schedule', icon: Calendar },
-                    tasks: { name: 'Tasks', icon: BookOpen },
-                    leave: { name: 'Leave', icon: CalendarCheck },
-                    admin: { name: 'Admin', icon: BarChart3 },
-                    faculty: { name: 'Faculty', icon: User }
-                },
-                
-                // All suggestions mapped to their triggers
-                suggestions: {
-                    // Academic Performance
-                    cgpa: { text: "What's my CGPA?", category: 'academic', triggers: ['start', 'grades', 'gradehistory'] },
-                    marks: { text: "Show my marks", category: 'academic', triggers: ['start', 'cgpa', 'attendance'] },
-                    grades: { text: "Show semester grades", category: 'academic', triggers: ['cgpa', 'marks', 'gradehistory'] },
-                    gradeHistory: { text: "Complete academic history", category: 'academic', triggers: ['cgpa', 'grades'] },
-                    downloadGrades: { text: "Download grade history PDF", category: 'academic', triggers: ['gradehistory'] },
-                    bestSubject: { text: "Which subject am I best at?", category: 'academic', triggers: ['marks', 'attendance'] },
-                    worstSubject: { text: "Which subject needs improvement?", category: 'academic', triggers: ['marks', 'attendance'] },
-                    
-                    // Attendance & Schedule
-                    attendance: { text: "Show my attendance", category: 'schedule', triggers: ['start', 'marks', 'timetable'] },
-                    timetable: { text: "Show my timetable", category: 'schedule', triggers: ['attendance', 'examschedule'] },
-                    timetableToday: { text: "What classes do I have today?", category: 'schedule', triggers: ['timetable', 'start'] },
-                    timetableTomorrow: { text: "Tomorrow's schedule", category: 'schedule', triggers: ['timetable'] },
-                    examSchedule: { text: "When are my exams?", category: 'schedule', triggers: ['marks', 'calendar', 'assignments'] },
-                    academicCalendar: { text: "Show academic calendar", category: 'schedule', triggers: ['examschedule', 'timetable'] },
-                    nextHoliday: { text: "When is the next holiday?", category: 'schedule', triggers: ['calendar', 'timetable'] },
-                    workingSaturday: { text: "Next working Saturday?", category: 'schedule', triggers: ['calendar'] },
-                    debarment: { text: "Am I at debarment risk?", category: 'schedule', triggers: ['attendance'] },
-                    
-                    // Tasks & Assignments
-                    assignments: { text: "Show my assignments", category: 'tasks', triggers: ['start', 'marks', 'attendance'] },
-                    urgentDeadline: { text: "Which deadline is most urgent?", category: 'tasks', triggers: ['assignments'] },
-                    overdueAssignments: { text: "Any overdue assignments?", category: 'tasks', triggers: ['assignments'] },
-                    
-                    // Leave Management
-                    leaveHistory: { text: "Show my leave history", category: 'leave', triggers: ['leavestatus', 'attendance'] },
-                    leaveStatus: { text: "Check pending leave status", category: 'leave', triggers: ['leavehistory'] },
-                    
-                    // Administrative
-                    paymentHistory: { text: "Show fee payment history", category: 'admin', triggers: ['start', 'proctordetails'] },
-                    proctorDetails: { text: "Who is my proctor?", category: 'admin', triggers: ['facultyinfo', 'start'] },
-                    loginHistory: { text: "Show my login history", category: 'admin', triggers: ['start'] },
-                    counsellingRank: { text: "What's my hostel counselling rank?", category: 'admin', triggers: ['start'] },
-                    
-                    // Faculty
-                    facultySearch: { text: "Search for a faculty member", category: 'faculty', triggers: ['proctordetails'] },
-                    
-                    // Multi-intent combinations
-                    semesterReport: { text: "Give me a complete semester report", category: 'academic', triggers: ['start', 'cgpa', 'marks'] },
-                    marksAndAttendance: { text: "Show marks and attendance together", category: 'academic', triggers: ['marks', 'attendance'] },
-                    overview: { text: "Quick academic overview", category: 'academic', triggers: ['start'] }
-                },
-                
-                // Flow: What to suggest after each detected intent
-                flows: {
-                    'cgpa': ['gradeHistory', 'marks', 'grades', 'semesterReport'],
-                    'marks': ['attendance', 'bestSubject', 'worstSubject', 'examSchedule'],
-                    'attendance': ['debarment', 'timetable', 'marks', 'leaveHistory'],
-                    'assignments': ['urgentDeadline', 'examSchedule', 'marks'],
-                    'timetable': ['timetableToday', 'timetableTomorrow', 'academicCalendar', 'attendance'],
-                    'examschedule': ['academicCalendar', 'marks', 'timetable'],
-                    'grades': ['gradeHistory', 'cgpa', 'marks'],
-                    'gradehistory': ['downloadGrades', 'cgpa', 'grades'],
-                    'leavehistory': ['leaveStatus', 'attendance'],
-                    'leavestatus': ['leaveHistory', 'attendance'],
-                    'paymenthistory': ['proctorDetails', 'cgpa'],
-                    'proctordetails': ['facultySearch', 'paymentHistory'],
-                    'loginhistory': ['cgpa', 'attendance'],
-                    'counsellingrank': ['proctorDetails', 'paymentHistory'],
-                    'facultyinfo': ['proctorDetails'],
-                    'academiccalendar': ['nextHoliday', 'workingSaturday', 'examSchedule'],
-                    'general': ['cgpa', 'attendance', 'marks', 'assignments'],
-                    'default': ['semesterReport', 'attendance', 'assignments', 'timetableToday']
-                }
-            };
-
-            const getDynamicSuggestions = () => {
-                const config = SUGGESTION_CONFIG;
-                
-                // Initial suggestions (just logged in)
-                if (messages.length <= 2) {
-                    return [
-                        { text: "What's my CGPA?", icon: GraduationCap },
-                        { text: "Show my attendance", icon: Calendar },
-                        { text: "Get my marks", icon: BarChart3 },
-                        { text: "Show my assignments", icon: BookOpen }
-                    ];
-                }
-
-                // Get last bot message
-                const lastBotMessage = [...messages].reverse().find(m => m.type === 'bot' && !m.loading);
-                if (!lastBotMessage) return [];
-
-                const content = lastBotMessage.content.toLowerCase();
-                
-                // Detect which intent was just responded to
-                let detectedIntent = 'default';
-                
-                const intentPatterns = {
-                    'cgpa': /cgpa|cumulative.*grade|overall.*gpa/i,
-                    'marks': /marks|score|cat-?1|cat-?2|fat|assessment|weightage/i,
-                    'attendance': /attendance|attended|classes.*missed|debarment/i,
-                    'assignments': /assignment|deadline|digital.*assessment|da.*due/i,
-                    'timetable': /timetable|schedule|monday|tuesday|wednesday|thursday|friday|class.*timing/i,
-                    'examschedule': /exam.*schedule|exam.*date|venue|seat.*no/i,
-                    'grades': /semester.*grade|gpa.*this.*semester|course.*grade/i,
-                    'gradehistory': /grade.*history|academic.*history|curriculum.*progress|credits.*earned/i,
-                    'leavehistory': /leave.*history|hostel.*leave|leave.*taken/i,
-                    'leavestatus': /leave.*status|pending.*leave|approved.*leave/i,
-                    'paymenthistory': /payment|fee.*receipt|invoice|transaction/i,
-                    'proctordetails': /proctor|faculty.*advisor|cabin.*number/i,
-                    'loginhistory': /login.*history|session.*record|ip.*address/i,
-                    'counsellingrank': /counselling.*rank|hostel.*slot|counseling.*date/i,
-                    'facultyinfo': /faculty.*info|professor|open.*hours|faculty.*search/i,
-                    'academiccalendar': /academic.*calendar|holiday|instructional.*day/i
-                };
-
-                for (const [intent, pattern] of Object.entries(intentPatterns)) {
-                    if (pattern.test(content)) {
-                        detectedIntent = intent;
-                        break;
-                    }
-                }
-
-                // Get suggested keys from flow
-                const flowSuggestions = config.flows[detectedIntent] || config.flows['default'];
-                
-                // Build final suggestions with proper icons
-                const suggestions = flowSuggestions.slice(0, 4).map(key => {
-                    const suggestion = config.suggestions[key];
-                    if (!suggestion) return null;
-                    
-                    const category = config.categories[suggestion.category];
-                    return {
-                        text: suggestion.text,
-                        icon: category?.icon || GraduationCap
-                    };
-                }).filter(Boolean);
-
-                // If we got less than 3 suggestions, add some variety
-                if (suggestions.length < 3) {
-                    const extras = [
-                        { text: "Show my timetable", icon: Calendar },
-                        { text: "Check exam schedule", icon: CalendarCheck },
-                        { text: "Academic calendar", icon: BookOpen }
-                    ];
-                    suggestions.push(...extras.slice(0, 3 - suggestions.length));
-                }
-
-                return suggestions;
-            };
-
-
-if (showLoginForm) {
-                return React.createElement(LoginForm, { 
-                    onLogin: handleLogin, 
-                    isLoading: isLoading,
-                    error: loginError
-                });
-            }
-
-            return React.createElement('div', { className: "min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50" }, [
-                // Header
-                React.createElement('div', { 
-                    className: "bg-white/80 backdrop-blur-sm border-b border-gray-200 sticky top-0 z-10",
-                    key: 'header'
-                }, [
-                    React.createElement('div', { className: "max-w-4xl mx-auto px-4 py-4" }, [
-                        React.createElement('div', { className: "flex items-center justify-between" }, [
-                            React.createElement('div', { className: "flex items-center space-x-3" }, [
-                                React.createElement('div', { 
-                                    className: "w-10 h-10 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center" 
-                                }, React.createElement(GraduationCap, { className: "w-6 h-6 text-white" })),
-                                React.createElement('div', {}, [
-                                    React.createElement('h1', { className: "text-xl font-bold text-gray-900" }, "VTOP Assistant"),
-                                    React.createElement('p', { className: "text-sm text-gray-600" }, 
-                                        isDemo ? "Demo Mode - Real VTOP Data" : "Your academic companion"
-                                    )
-                                ])
-                            ]),
-                            React.createElement('div', { className: "flex items-center space-x-4" }, [
-                                React.createElement('div', { className: "flex items-center space-x-2" }, [
-                                    React.createElement('div', { 
-                                        className: `w-3 h-3 rounded-full ${
-                                            loginStatus === 'success' ? 'bg-green-500' : 
-                                            loginStatus === 'logging' ? 'bg-yellow-500' : 'bg-red-500'
-                                        }`
-                                    }),
-                                    React.createElement('span', { className: "text-sm text-gray-600" }, 
-                                        loginStatus === 'success' ? (isDemo ? 'Demo Mode' : 'Connected') : 
-                                        loginStatus === 'logging' ? 'Connecting...' : 'Disconnected'
-                                    )
-                                ]),
-                                React.createElement('button', {
-                                    onClick: handleLogout,
-                                    className: "text-sm text-gray-500 hover:text-gray-700 px-3 py-1 rounded-lg border border-gray-300 hover:border-gray-400 transition-colors"
-                                }, "Logout")
-                            ])
-                        ])
-                    ])
-                ]),
-
-                // Chat Container
-                React.createElement('div', { className: "max-w-4xl mx-auto flex flex-col h-[calc(100vh-80px)]", key: 'chat-container' }, [
-                    // Messages
-                    React.createElement('div', { className: "flex-1 overflow-y-auto p-4 space-y-4", key: 'messages' }, [
-                        ...messages.map((message) => 
-                            React.createElement('div', { 
-                                key: message.id,
-                                className: `flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`
-                            }, [
-                                React.createElement('div', { 
-                                    className: `flex items-start space-x-3 max-w-3xl ${
-                                        message.type === 'user' ? 'flex-row-reverse space-x-reverse' : ''
-                                    }`
-                                }, [
-                                    React.createElement('div', { 
-                                        className: `w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                                            message.type === 'user' ? 'bg-blue-600 text-white' : 
-                                            message.type === 'system' ? 'bg-gray-600 text-white' : 
-                                            'bg-indigo-600 text-white'
-                                        }`
-                                    }, message.type === 'user' ? React.createElement(User) : 
-                                       message.type === 'system' ? React.createElement(GraduationCap) : 
-                                       React.createElement(Bot)),
-                                    React.createElement('div', { 
-                                        className: `rounded-2xl px-4 py-3 ${
-                                            message.type === 'user' ? 'bg-blue-600 text-white' :
-                                            message.type === 'system' ? 'bg-gray-100 text-gray-800' :
-                                            'bg-white text-gray-800 shadow-sm border'
-                                        }`
-                                    }, [
-                                        (message.loading || (!message.content && !message.data && message.type === 'bot')) ? 
-                                            React.createElement(ThinkingIndicator) : 
-                                            formatMessage(message),
-                                        React.createElement('div', { 
-                                            className: `text-xs mt-2 ${
-                                                message.type === 'user' ? 'text-blue-200' : 'text-gray-500'
-                                            }`
-                                        }, message.timestamp.toLocaleTimeString())
-                                    ])
-                                ])
-                            ])
-                        ),
-                        React.createElement('div', { ref: messagesEndRef, key: 'end-ref' })
-                    ]),
-
-                    // Suggested Queries - Now Dynamic!
-loginStatus === 'success' && !isLoading ? 
-    React.createElement('div', { className: "px-4 py-2", key: 'suggestions' }, [
-        React.createElement('div', { className: "flex flex-wrap gap-2 justify-center" }, 
-            getDynamicSuggestions().map((query, index) => {
-                                    const IconComponent = query.icon;
-                                    return React.createElement('button', {
-                                        key: index,
-                                        onClick: () => handleSuggestionClick(query.text),
-                                        disabled: !isLoggedIn || isLoading,
-                                        className: "suggestion-button flex items-center space-x-2 px-3 py-2 bg-white rounded-full border text-sm text-gray-600 hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                                    }, [
-                                        React.createElement(IconComponent, { key: 'icon' }),
-                                        React.createElement('span', { key: 'text' }, query.text)
-                                    ]);
-                                })
-                            )
-                        ]) : null,
-
-                    // Input Area
-                    React.createElement('div', { className: "p-4 bg-white/90 backdrop-blur-md border-t border-gray-100 mb-2 mx-2 rounded-2xl shadow-[0_-5px_20px_rgba(0,0,0,0.05)]", key: 'input' }, [
-                        React.createElement('div', { className: "flex items-center space-x-3" }, [
-                            React.createElement('div', { className: "flex-1 relative" }, [
-                                React.createElement('textarea', {
-                                    value: inputValue,
-                                    onChange: (e) => setInputValue(e.target.value),
-                                    onKeyPress: handleKeyPress,
-                                    placeholder: isLoggedIn ? 
-                                        (isDemo ? "Ask me about the CGPA, attendance, marks, or assignments..." : "Ask me about your CGPA, attendance, marks, assignments or timetable...") : 
-                                        "Please wait while I connect to VTOP...",
-                                    disabled: !isLoggedIn || isLoading,
-                                    className: "w-full px-4 py-3 pr-12 border border-gray-300 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed resize-none",
-                                    rows: "1",
-                                    style: { minHeight: '48px', maxHeight: '120px' }
-                                })
-                            ]),
-                            React.createElement('button', {
-                                onClick: handleSendMessage,
-                                disabled: !inputValue.trim() || !isLoggedIn || isLoading,
-                                className: "w-12 h-12 bg-blue-600 text-white rounded-full flex items-center justify-center hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-                            }, isLoading ? React.createElement(Loader2) : React.createElement(Send))
-                        ])
-                    ])
-                ])
-            ]);
+            return <LoginForm onLogin={handleLogin} isLoading={isLoading} error={loginError} setRedirectTarget={setRedirectTarget} />;
         };
 
-        ReactDOM.render(React.createElement(VTOPChatInterface), document.getElementById('root'));
+        ReactDOM.render(<App />, document.getElementById('root'));
     </script>
 </body>
 </html>
