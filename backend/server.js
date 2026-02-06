@@ -879,17 +879,11 @@ app.post('/api/chat', async (req, res) => {
         case 'getleavehistory':
           prompt = `The user asked: "${message}"\nHere's their leave history data: ${JSON.stringify(data, null, 2)}\n\nFormat as a markdown table with columns:\n| Place | Reason | Type | From → To | Status |\nUse emojis: ✅ for APPROVED, ❌ for CANCELLED, ⏳ for PENDING`;
           break;
-        case 'getleavestatus':
-          prompt = `The user asked: "${message}"\nHere's their current leave status: ${JSON.stringify(data, null, 2)}\n\nFormat as a markdown table with columns:\n| Place | Reason | Type | From → To | Status |`;
-          break;
         case 'getgrades':
           prompt = `The user asked: "${message}"\nHere's their semester grades data: ${JSON.stringify(data, null, 2)}\n\nCreate a markdown table with columns:\n| Course Code | Course Title | Credits | Total | Grade |\nUse grade emojis: 🌟 for S, ✅ for A, 👍 for B, etc.`;
           break;
         case 'getpaymenthistory':
           prompt = `The user asked: "${message}"\nHere's their payment history: ${JSON.stringify(data, null, 2)}\n\nFormat as a markdown table with columns:\n| Invoice No | Receipt No | Date | Amount | Campus |`;
-          break;
-        case 'getproctordetails':
-          prompt = `The user asked: "${message}"\nHere's their proctor details: ${JSON.stringify(data, null, 2)}\n\nFormat the proctor information in a clean way with emojis like 👨‍🏫, 📧, 📍`;
           break;
           break;
         case 'getcounsellingrank':
@@ -905,6 +899,20 @@ app.post('/api/chat', async (req, res) => {
         case 'downloadgradehistory':
           prompt = `The user asked: "${message}"\n\nRespond by providing a direct link: [📄 Download Grade History PDF](/api/downloads/grade-history?sessionId=${session.id})`;
           break;
+    case 'getproctordetails':
+      prompt = `
+        The user asked: "${message}"
+        Here's their proctor details: ${JSON.stringify(data, null, 2)}
+        
+        Format the proctor information in a clean way:
+        - Designation
+        - Department
+        - Cabin number
+        
+        Use emojis like 👨‍🏫 for name, 📧 for email, 📍 for cabin.
+        Use markdown formatting for readability.
+      `;
+      break;
     case 'getgradehistory':
       prompt = `
         The user asked: "${message}"
@@ -932,6 +940,27 @@ app.post('/api/chat', async (req, res) => {
         
         Use markdown formatting extensively.
       `;
+      case 'getleavestatus':
+      prompt = `
+        The user asked: "${message}"
+        Here's their current leave status: ${JSON.stringify(data, null, 2)}
+        
+        Format as a markdown table with columns:
+        | Place | Reason | Type | From → To | Status |
+        
+        Use emojis for status:
+        - ✅ for APPROVED
+        - ❌ for REJECTED/CANCELLED
+        - ⏳ for PENDING
+        
+        After the table, add a summary with:
+        - Active/pending leaves
+        - Recently approved leaves
+        - Any action needed
+        
+        Use markdown formatting for clarity.
+      `;
+      break;
         default:
           prompt = `The user asked: "${message}"\n\nBased on our conversation, answer their question naturally.`;
           break;
