@@ -879,40 +879,68 @@ app.post('/api/chat', async (req, res) => {
         case 'getleavehistory':
           prompt = `The user asked: "${message}"\nHere's their leave history data: ${JSON.stringify(data, null, 2)}\n\nFormat as a markdown table with columns:\n| Place | Reason | Type | From → To | Status |\nUse emojis: ✅ for APPROVED, ❌ for CANCELLED, ⏳ for PENDING`;
           break;
-        case 'getgrades':
-          prompt = `The user asked: "${message}"\nHere's their semester grades data: ${JSON.stringify(data, null, 2)}\n\nCreate a markdown table with columns:\n| Course Code | Course Title | Credits | Total | Grade |\nUse grade emojis: 🌟 for S, ✅ for A, 👍 for B, etc.`;
-          break;
-        case 'getpaymenthistory':
-          prompt = `The user asked: "${message}"\nHere's their payment history: ${JSON.stringify(data, null, 2)}\n\nFormat as a markdown table with columns:\n| Invoice No | Receipt No | Date | Amount | Campus |`;
-          break;
-          break;
-        case 'getcounsellingrank':
-          prompt = `The user asked: "${message}"\nHere's their counselling rank details: ${JSON.stringify(data, null, 2)}\n\nFormat the counselling information clearly with emojis: 🎯, 👥, 🎫, ⏰, 📍, 📅`;
-          break;
-        case 'getfacultyinfo':
-          prompt = `The user asked: "${message}"\nHere's the faculty information: ${JSON.stringify(data, null, 2)}\n\nHANDLE THESE SCENARIOS:\n1. If ERROR: Show error message\n2. If MULTIPLE FACULTIES: List all with name, designation, school\n3. If SINGLE FACULTY: Show detailed info with name, designation, department, school, email, cabin, open hours`;
-          break;
-        case 'getacademiccalendar':
-          const currentDate = new Date().toDateString();
-          prompt = `The user asked: "${message}"\nCURRENT REAL DATE: ${currentDate}\nHere's the academic calendar data: ${JSON.stringify(data, null, 2)}\n\nIMPORTANT: Use CURRENT DATE (${currentDate}) to answer relative questions. Smart filter: show specific events if asked, full calendar if requested.`;
-          break;
-        case 'downloadgradehistory':
-          prompt = `The user asked: "${message}"\n\nRespond by providing a direct link: [📄 Download Grade History PDF](/api/downloads/grade-history?sessionId=${session.id})`;
-          break;
+
+    case 'getgrades':
+      prompt = `
+        The user asked: "${message}"
+        Here's their semester grades data: ${JSON.stringify(data, null, 2)}
+        
+        Create a markdown table with columns:
+        | Course Code | Course Title | Credits | Total | Grade |
+        
+        Use grade emojis:
+        - 🌟 for S grade
+        - ✅ for A grade
+        - 👍 for B grade
+        - 📘 for C grade
+        - 📙 for D grade
+        - ⚠️ for E grade
+        - ❌ for F grade
+        
+        After the table, show:
+        - GPA for this semester
+        - Total courses
+        - Grade distribution summary
+        
+        Use markdown formatting (bold headers, emphasis).
+      `;
+      break;
+
+    case 'getpaymenthistory':
+      prompt = `
+        The user asked: "${message}"
+        Here's their payment history: ${JSON.stringify(data, null, 2)}
+        
+        Format as a markdown table with columns:
+        | Invoice No | Receipt No | Date | Amount | Campus |
+        
+        After the table, add:
+        - Total amount paid
+        - Total transactions
+        - Latest payment date
+        
+        Use markdown formatting and include ₹ symbol for amounts.
+      `;
+      break;
+
     case 'getproctordetails':
       prompt = `
         The user asked: "${message}"
         Here's their proctor details: ${JSON.stringify(data, null, 2)}
         
         Format the proctor information in a clean way:
+        - Name
         - Designation
         - Department
+        - School
+        - Email
         - Cabin number
         
         Use emojis like 👨‍🏫 for name, 📧 for email, 📍 for cabin.
         Use markdown formatting for readability.
       `;
       break;
+
     case 'getgradehistory':
       prompt = `
         The user asked: "${message}"
@@ -940,6 +968,83 @@ app.post('/api/chat', async (req, res) => {
         
         Use markdown formatting extensively.
       `;
+      break;
+
+    case 'getcounsellingrank':
+      prompt = `
+        The user asked: "${message}"
+        Here's their counselling rank details: ${JSON.stringify(data, null, 2)}
+        
+        Format the counselling information clearly:
+        - 🎯 Counselling Rank
+        - 👥 Group
+        - 🎫 Slot
+        - ⏰ Report Time
+        - 📍 Venue
+        - 📅 Counseling Date
+        
+        Use emojis and markdown formatting for emphasis.
+      `;
+      break;
+
+    case 'getfacultyinfo':
+      prompt = `
+        The user asked: "${message}"
+        Here's the faculty information: ${JSON.stringify(data, null, 2)}
+        
+        HANDLE THESE SCENARIOS:
+        
+        1. If there's an ERROR (data.error exists):
+           - Show the error message from data.error
+           - Give helpful suggestions (check spelling, use at least 3 characters, etc.)
+        
+        2. If MULTIPLE FACULTIES found (data.requiresSelection === true):
+           - Show data.message
+           - List all faculties with:
+             * Name
+             * Designation
+             * School
+           - Ask user to be more specific or choose one
+        
+        3. If SINGLE FACULTY details provided:
+           - Format clearly with:
+             * 👤 Name: [name]
+             * 🏢 Designation: [designation]
+             * 🏛️ Department: [details['Name of Department']]
+             * 🎓 School: [details['School / Centre Name'] or school]
+             * 📧 Email: [details['E-Mail Id']]
+             * 📍 Cabin: [details['Cabin Number']]
+             * ⏰ Open Hours (if openHours array has data):
+               List each day and timing
+        
+        Use markdown formatting for readability and emojis for visual appeal.
+      `;
+      break;
+      case 'getacademiccalendar':
+      const currentDate = new Date().toDateString();
+      prompt = `
+        The user asked: "${message}"
+        CURRENT REAL DATE: ${currentDate}
+        Here's the academic calendar data: ${JSON.stringify(data, null, 2)}
+        
+        IMPORTANT INSTRUCTIONS:
+        1. **Context Awareness**: Use CURRENT DATE (${currentDate}) to answer relative questions (e.g., "next working saturday", "upcoming holidays", "how many days left").
+        2. **Smart Filtering**: 
+           - If user asks for specific events (e.g., "When is Pongal?", "Holidays in Jan"), show ONLY those specific dates. DO NOT show the whole calendar.
+           - If user asks for "next working Saturday", find the next 'Instructional Day' falling on a Saturday AFTER ${currentDate}.
+        3. **Full Calendar**: Only show the full month-wise view if explicitly asked (e.g., "show academic calendar", "full schedule").
+
+        Format for Full Calendar (if requested):
+        For each month (July to November):
+        ### 📅 MONTH YEAR
+        - Show events with emojis: 🎯 Start, 📚 Instructional, 🏖️ Holiday, 📝 Exam
+        
+        Format for Specific/Relative Queries:
+        - 📅 **Event Name**: Date - Note (if any)
+        
+        Use markdown formatting.
+      `;
+      break;
       case 'getleavestatus':
       prompt = `
         The user asked: "${message}"
@@ -959,6 +1064,18 @@ app.post('/api/chat', async (req, res) => {
         - Any action needed
         
         Use markdown formatting for clarity.
+      `;
+      break;
+      case 'downloadgradehistory':
+      prompt = `
+        The user asked: "${message}"
+        
+        Respond by providing a direct link to download their Grade History PDF.
+        
+        Use this EXACT Markdown link format:
+        [📄 Download Grade History PDF](/api/downloads/grade-history?sessionId=${session.id})
+        
+        Tell them the file will contain their complete academic performance record.
       `;
       break;
         default:
