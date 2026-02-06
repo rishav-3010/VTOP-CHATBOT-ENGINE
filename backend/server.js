@@ -1218,17 +1218,100 @@ app.post('/api/faculty/select', async (req, res) => {
   }
 });
 
-// Papers Search Endpoint
+// ===== INDIVIDUAL PAPER SOURCE ENDPOINTS (for progressive loading) =====
+
+// GitHub Papers Search
+app.post('/api/papers/search/github', async (req, res) => {
+  console.log('\n📘 GitHub Papers Search:');
+  try {
+    const { courseCode, courseName, paperType } = req.body;
+    
+    if (!courseCode && !courseName) {
+      return res.status(400).json({ success: false, error: { message: 'Please provide course code or name' } });
+    }
+
+    const results = await searchPapers({ courseCode, courseName, paperType });
+    
+    console.log(`✅ GitHub: Found ${results.length} papers`);
+    
+    res.json({
+      success: true,
+      source: 'github',
+      count: results.length,
+      results: results.map(paper => ({
+        title: paper.title,
+        courseCode: paper.courseCode,
+        type: paper.examType,
+        year: paper.year,
+        term: paper.term,
+        subject: paper.subject,
+        url: paper.downloadUrl,
+        source: 'GitHub',
+        metadata: {}
+      }))
+    });
+  } catch (error) {
+    console.error('GitHub search error:', error.message);
+    res.json({
+      success: false,
+      source: 'github',
+      error: { message: error.message, type: error.retryAfter ? 'RATE_LIMIT' : 'ERROR' }
+    });
+  }
+});
+
+// CodeChef Papers Search
+app.post('/api/papers/search/codechef', async (req, res) => {
+  console.log('\n🍴 CodeChef Papers Search:');
+  try {
+    const { courseCode, courseName, paperType } = req.body;
+    
+    if (!courseCode && !courseName) {
+      return res.status(400).json({ success: false, error: { message: 'Please provide course code or name' } });
+    }
+
+    const results = await searchCodeChefPapers({ courseCode, courseName, paperType });
+    
+    console.log(`✅ CodeChef: Found ${results.length} papers`);
+    
+    res.json({
+      success: true,
+      source: 'codechef',
+      count: results.length,
+      results: results.map(paper => ({
+        title: paper.title,
+        courseCode: paper.courseCode,
+        type: paper.examType,
+        year: paper.year,
+        subject: paper.subject,
+        url: paper.downloadUrl,
+        source: 'CodeChef-VIT',
+        thumbnail: paper.thumbnailUrl || null,
+        metadata: paper.metadata || {}
+      }))
+    });
+  } catch (error) {
+    console.error('CodeChef search error:', error.message);
+    res.json({
+      success: false,
+      source: 'codechef',
+      error: { message: error.message, type: 'ERROR' }
+    });
+  }
+});
+
+// Combined Papers Search Endpoint (legacy - still works)
 app.post('/api/papers/search', async (req, res) => {
   console.log('\n📚 Papers Search Request Received:');
   console.log('----------------------------------');
   try {
-    const { courseCode, courseName, paperType } = req.body;
+    const { courseCode, courseName, paperType, sources } = req.body;
 
     console.log('📥 Search parameters:', {
       courseCode: courseCode || '(not provided)',
       courseName: courseName || '(not provided)',
-      paperType: paperType || 'all'
+      paperType: paperType || 'all',
+      sources: sources || { github: true, codechef: true }
     });
     
     if (!courseCode && !courseName) {
@@ -1241,12 +1324,26 @@ app.post('/api/papers/search', async (req, res) => {
       });
     }
 
-    console.log('🔍 Searching multiple sources...');
+    // Default to both sources if not specified
+    const selectedSources = sources || { github: true, codechef: true };
+
+    console.log('🔍 Searching selected sources...');
     
-    const [githubResults, codechefResults] = await Promise.allSettled([
-      searchPapers({ courseCode, courseName, paperType }),
-      searchCodeChefPapers({ courseCode, courseName, paperType })
-    ]);
+    // Only search from selected sources
+    const searchPromises = [];
+    if (selectedSources.github) {
+      searchPromises.push(searchPapers({ courseCode, courseName, paperType }));
+    } else {
+      searchPromises.push(Promise.resolve([]));
+    }
+    
+    if (selectedSources.codechef) {
+      searchPromises.push(searchCodeChefPapers({ courseCode, courseName, paperType }));
+    } else {
+      searchPromises.push(Promise.resolve([]));
+    }
+    
+    const [githubResults, codechefResults] = await Promise.allSettled(searchPromises);
 
     let allResults = [];
     

@@ -96,45 +96,59 @@
         // ===== PAPERS INTERFACE =====
         const PapersInterface = ({ onBack }) => {
             const [courseName, setCourseName] = useState('');
+            const [courseCode, setCourseCode] = useState('');
             const [paperType, setPaperType] = useState('all');
-            const [searchResults, setSearchResults] = useState([]);
-            const [isLoading, setIsLoading] = useState(false);
+            const [sources, setSources] = useState({ github: true, codechef: true });
+            const [papers, setPapers] = useState([]);
+            const [loadingStates, setLoadingStates] = useState({ github: false, codechef: false });
+            const [sourceResults, setSourceResults] = useState({ github: 0, codechef: 0 });
             const [errorMessage, setErrorMessage] = useState(null);
+            const [hasSearched, setHasSearched] = useState(false);
+
+            const isAnyLoading = loadingStates.github || loadingStates.codechef;
+
+            const searchSource = async (source, searchParams) => {
+                setLoadingStates(prev => ({ ...prev, [source]: true }));
+                
+                try {
+                    const response = await fetch(`/api/papers/search/${source}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(searchParams)
+                    });
+                    const data = await response.json();
+                    
+                    if (data.success && data.results) {
+                        // Append results as they come in
+                        setPapers(prev => [...prev, ...data.results]);
+                        setSourceResults(prev => ({ ...prev, [source]: data.results.length }));
+                    } else if (data.error?.type === 'RATE_LIMIT') {
+                        setErrorMessage(`GitHub rate limit exceeded. Try again later.`);
+                    }
+                } catch (error) {
+                    console.error(`Error searching ${source}:`, error);
+                } finally {
+                    setLoadingStates(prev => ({ ...prev, [source]: false }));
+                }
+            };
 
             const handleSearch = async () => {
                 if (!courseName) return;
                 
-                setIsLoading(true);
+                // Reset state
+                setPapers([]);
+                setSourceResults({ github: 0, codechef: 0 });
                 setErrorMessage(null);
+                setHasSearched(true);
                 
-                try {
-                    const response = await fetch('/api/papers/search', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ courseName, paperType })
-                    });
-                    const data = await response.json();
-                    
-                    if (data.success) {
-                        setSearchResults(data);
-                        setErrorMessage(null);
-                    } else if (data.error?.type === 'RATE_LIMIT') {
-                        const retryTime = new Date(data.error.retryAfter);
-                        const minutesToRetry = Math.ceil((retryTime - new Date()) / 60000);
-                        setErrorMessage(
-                            `GitHub API rate limit exceeded. Please try again in ${minutesToRetry} minutes.`
-                        );
-                        setSearchResults([]);
-                    } else {
-                        setErrorMessage(data.error?.message || 'An error occurred while searching papers.');
-                        setSearchResults([]);
-                    }
-                } catch (error) {
-                    console.error('Error searching papers:', error);
-                    setErrorMessage('An unexpected error occurred. Please try again later.');
-                    setSearchResults([]);
-                } finally {
-                    setIsLoading(false);
+                const searchParams = { courseName, paperType };
+                
+                // Fire off searches in parallel - results will stream in
+                if (sources.codechef) {
+                    searchSource('codechef', searchParams);
+                }
+                if (sources.github) {
+                    searchSource('github', searchParams);
                 }
             };
 
@@ -167,6 +181,32 @@
                     {/* Search Interface */}
                     <div className="max-w-4xl mx-auto p-4">
                         <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
+                            {/* Source Selection */}
+                            <div className="pb-4 border-b border-gray-200">
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Search Sources</label>
+                                <div className="flex space-x-4">
+                                    <label className="flex items-center space-x-2 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={sources.github}
+                                            onChange={(e) => setSources({ ...sources, github: e.target.checked })}
+                                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                        />
+                                        <span className="text-sm text-gray-700 font-medium">GitHub Papers</span>
+                                        <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">VIT-PYQPs</span>
+                                    </label>
+                                    <label className="flex items-center space-x-2 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={sources.codechef}
+                                            onChange={(e) => setSources({ ...sources, codechef: e.target.checked })}
+                                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                        />
+                                        <span className="text-sm text-gray-700 font-medium">CodeChef Papers</span>
+                                        <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">CodeChef-VIT</span>
+                                    </label>
+                                </div>
+                            </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Course Name</label>
@@ -195,18 +235,62 @@
                             <div className="flex justify-end">
                                 <button
                                     onClick={handleSearch}
-                                    disabled={!courseName || isLoading}
+                                    disabled={!courseName || isAnyLoading || (!sources.github && !sources.codechef)}
                                     className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center space-x-2"
                                 >
-                                    {isLoading && <Loader2 />}
+                                    {isAnyLoading && <Loader2 />}
                                     <span>Search Papers</span>
                                 </button>
                             </div>
                         </div>
 
+                        {/* Loading Status Indicators */}
+                        {hasSearched && (loadingStates.github || loadingStates.codechef || papers.length > 0) && (
+                            <div className="mt-4 flex flex-wrap gap-3">
+                                {sources.codechef && (
+                                    <div className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm ${
+                                        loadingStates.codechef 
+                                            ? 'bg-orange-50 border border-orange-200' 
+                                            : 'bg-green-50 border border-green-200'
+                                    }`}>
+                                        {loadingStates.codechef ? (
+                                            <>
+                                                <Loader2 />
+                                                <span className="text-orange-700">Searching CodeChef...</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <span className="text-green-600">✓</span>
+                                                <span className="text-green-700">CodeChef: {sourceResults.codechef} papers</span>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
+                                {sources.github && (
+                                    <div className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm ${
+                                        loadingStates.github 
+                                            ? 'bg-blue-50 border border-blue-200' 
+                                            : 'bg-green-50 border border-green-200'
+                                    }`}>
+                                        {loadingStates.github ? (
+                                            <>
+                                                <Loader2 />
+                                                <span className="text-blue-700">Searching GitHub... (may take ~1 min)</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <span className="text-green-600">✓</span>
+                                                <span className="text-green-700">GitHub: {sourceResults.github} papers</span>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
                         {/* Error Message */}
                         {errorMessage && (
-                            <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+                            <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
                                 <div className="flex items-center space-x-2 text-red-800">
                                     <span className="font-medium">⚠️ Error</span>
                                 </div>
@@ -215,16 +299,25 @@
                         )}
 
                         {/* Results */}
-                        {searchResults.results?.length > 0 && (
-                            <div className="mt-6 space-y-4">
-                                {searchResults.results.map((paper, index) => (
+                        {papers.length > 0 && (
+                            <div className="mt-4 space-y-3">
+                                {papers.map((paper, index) => (
                                     <div
                                         key={index}
                                         className="bg-white rounded-lg shadow-sm p-4 hover:shadow-md transition-shadow"
                                     >
                                         <div className="flex items-center justify-between">
-                                            <div>
-                                                <h3 className="font-medium text-gray-900">{paper.title}</h3>
+                                            <div className="flex-1">
+                                                <div className="flex items-center space-x-2 mb-1">
+                                                    <h3 className="font-medium text-gray-900">{paper.title}</h3>
+                                                    <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                                        paper.source === 'CodeChef-VIT' 
+                                                            ? 'bg-orange-100 text-orange-700' 
+                                                            : 'bg-blue-100 text-blue-700'
+                                                    }`}>
+                                                        {paper.source === 'CodeChef-VIT' ? '🍴 CodeChef' : '📘 GitHub'}
+                                                    </span>
+                                                </div>
                                                 <p className="text-sm text-gray-500">
                                                     {paper.courseCode} • {paper.type} • {paper.year}
                                                 </p>

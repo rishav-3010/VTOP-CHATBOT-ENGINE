@@ -315,8 +315,8 @@
                             id: Date.now(),
                             type: 'system',
                             content: result.isDemo ? 
-                                '✅ Connected to VTOP using demo credentials! You\'re viewing real-time data fetched from an actual student account. Ask me about CGPA, attendance, marks, or assignments.' :
-                                '✅ Successfully connected to VTOP! You can now ask me about your CGPA, attendance, marks, assignments, and more.',
+                                ' Connected to VTOP using demo credentials! . Ask me about CGPA, attendance, marks, or assignments , and more.' :
+                                ' Successfully connected to VTOP! You can now ask me about your CGPA, attendance, marks, assignments, and more.',
                             timestamp: new Date()
                         }]);
                     } catch (error) {
@@ -650,7 +650,7 @@
                                     <div>
                                         <h1 className="text-xl font-bold text-gray-900">VTOP Assistant</h1>
                                         <p className="text-sm text-gray-600">
-                                            {isDemo ? "Demo Mode - Real VTOP Data" : "Your academic companion"}
+                                            {"Your academic companion"}
                                         </p>
                                     </div>
                                 </div>
