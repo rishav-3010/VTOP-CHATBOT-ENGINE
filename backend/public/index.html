@@ -1001,89 +1001,163 @@ const handleLogin = async (loginData) => {
   });
 };
 
+            // ===== SMART SUGGESTION SYSTEM =====
+            // All available functions grouped by category
+            const SUGGESTION_CONFIG = {
+                // Category definitions with icons
+                categories: {
+                    academic: { name: 'Academic', icon: GraduationCap },
+                    schedule: { name: 'Schedule', icon: Calendar },
+                    tasks: { name: 'Tasks', icon: BookOpen },
+                    leave: { name: 'Leave', icon: CalendarCheck },
+                    admin: { name: 'Admin', icon: BarChart3 },
+                    faculty: { name: 'Faculty', icon: User }
+                },
+                
+                // All suggestions mapped to their triggers
+                suggestions: {
+                    // Academic Performance
+                    cgpa: { text: "What's my CGPA?", category: 'academic', triggers: ['start', 'grades', 'gradehistory'] },
+                    marks: { text: "Show my marks", category: 'academic', triggers: ['start', 'cgpa', 'attendance'] },
+                    grades: { text: "Show semester grades", category: 'academic', triggers: ['cgpa', 'marks', 'gradehistory'] },
+                    gradeHistory: { text: "Complete academic history", category: 'academic', triggers: ['cgpa', 'grades'] },
+                    downloadGrades: { text: "Download grade history PDF", category: 'academic', triggers: ['gradehistory'] },
+                    bestSubject: { text: "Which subject am I best at?", category: 'academic', triggers: ['marks', 'attendance'] },
+                    worstSubject: { text: "Which subject needs improvement?", category: 'academic', triggers: ['marks', 'attendance'] },
+                    
+                    // Attendance & Schedule
+                    attendance: { text: "Show my attendance", category: 'schedule', triggers: ['start', 'marks', 'timetable'] },
+                    timetable: { text: "Show my timetable", category: 'schedule', triggers: ['attendance', 'examschedule'] },
+                    timetableToday: { text: "What classes do I have today?", category: 'schedule', triggers: ['timetable', 'start'] },
+                    timetableTomorrow: { text: "Tomorrow's schedule", category: 'schedule', triggers: ['timetable'] },
+                    examSchedule: { text: "When are my exams?", category: 'schedule', triggers: ['marks', 'calendar', 'assignments'] },
+                    academicCalendar: { text: "Show academic calendar", category: 'schedule', triggers: ['examschedule', 'timetable'] },
+                    nextHoliday: { text: "When is the next holiday?", category: 'schedule', triggers: ['calendar', 'timetable'] },
+                    workingSaturday: { text: "Next working Saturday?", category: 'schedule', triggers: ['calendar'] },
+                    debarment: { text: "Am I at debarment risk?", category: 'schedule', triggers: ['attendance'] },
+                    
+                    // Tasks & Assignments
+                    assignments: { text: "Show my assignments", category: 'tasks', triggers: ['start', 'marks', 'attendance'] },
+                    urgentDeadline: { text: "Which deadline is most urgent?", category: 'tasks', triggers: ['assignments'] },
+                    overdueAssignments: { text: "Any overdue assignments?", category: 'tasks', triggers: ['assignments'] },
+                    
+                    // Leave Management
+                    leaveHistory: { text: "Show my leave history", category: 'leave', triggers: ['leavestatus', 'attendance'] },
+                    leaveStatus: { text: "Check pending leave status", category: 'leave', triggers: ['leavehistory'] },
+                    
+                    // Administrative
+                    paymentHistory: { text: "Show fee payment history", category: 'admin', triggers: ['start', 'proctordetails'] },
+                    proctorDetails: { text: "Who is my proctor?", category: 'admin', triggers: ['facultyinfo', 'start'] },
+                    loginHistory: { text: "Show my login history", category: 'admin', triggers: ['start'] },
+                    counsellingRank: { text: "What's my hostel counselling rank?", category: 'admin', triggers: ['start'] },
+                    
+                    // Faculty
+                    facultySearch: { text: "Search for a faculty member", category: 'faculty', triggers: ['proctordetails'] },
+                    
+                    // Multi-intent combinations
+                    semesterReport: { text: "Give me a complete semester report", category: 'academic', triggers: ['start', 'cgpa', 'marks'] },
+                    marksAndAttendance: { text: "Show marks and attendance together", category: 'academic', triggers: ['marks', 'attendance'] },
+                    overview: { text: "Quick academic overview", category: 'academic', triggers: ['start'] }
+                },
+                
+                // Flow: What to suggest after each detected intent
+                flows: {
+                    'cgpa': ['gradeHistory', 'marks', 'grades', 'semesterReport'],
+                    'marks': ['attendance', 'bestSubject', 'worstSubject', 'examSchedule'],
+                    'attendance': ['debarment', 'timetable', 'marks', 'leaveHistory'],
+                    'assignments': ['urgentDeadline', 'examSchedule', 'marks'],
+                    'timetable': ['timetableToday', 'timetableTomorrow', 'academicCalendar', 'attendance'],
+                    'examschedule': ['academicCalendar', 'marks', 'timetable'],
+                    'grades': ['gradeHistory', 'cgpa', 'marks'],
+                    'gradehistory': ['downloadGrades', 'cgpa', 'grades'],
+                    'leavehistory': ['leaveStatus', 'attendance'],
+                    'leavestatus': ['leaveHistory', 'attendance'],
+                    'paymenthistory': ['proctorDetails', 'cgpa'],
+                    'proctordetails': ['facultySearch', 'paymentHistory'],
+                    'loginhistory': ['cgpa', 'attendance'],
+                    'counsellingrank': ['proctorDetails', 'paymentHistory'],
+                    'facultyinfo': ['proctorDetails'],
+                    'academiccalendar': ['nextHoliday', 'workingSaturday', 'examSchedule'],
+                    'general': ['cgpa', 'attendance', 'marks', 'assignments'],
+                    'default': ['semesterReport', 'attendance', 'assignments', 'timetableToday']
+                }
+            };
+
             const getDynamicSuggestions = () => {
-    // If no messages or just logged in, show default suggestions
-    if (messages.length <= 2) {
-        return [
-            { text: "What's my CGPA?", icon: GraduationCap },
-            { text: "Show my attendance", icon: Calendar },
-            { text: "Get my marks", icon: BarChart3 },
-            { text: "Show my assignments", icon: BookOpen }
-        ];
-    }
+                const config = SUGGESTION_CONFIG;
+                
+                // Initial suggestions (just logged in)
+                if (messages.length <= 2) {
+                    return [
+                        { text: "What's my CGPA?", icon: GraduationCap },
+                        { text: "Show my attendance", icon: Calendar },
+                        { text: "Get my marks", icon: BarChart3 },
+                        { text: "Show my assignments", icon: BookOpen }
+                    ];
+                }
 
-    // Get last bot message to determine context
-    const lastBotMessage = [...messages].reverse().find(m => m.type === 'bot' && !m.loading);
-    if (!lastBotMessage) return [];
+                // Get last bot message
+                const lastBotMessage = [...messages].reverse().find(m => m.type === 'bot' && !m.loading);
+                if (!lastBotMessage) return [];
 
-    const lastContent = lastBotMessage.content.toLowerCase();
+                const content = lastBotMessage.content.toLowerCase();
+                
+                // Detect which intent was just responded to
+                let detectedIntent = 'default';
+                
+                const intentPatterns = {
+                    'cgpa': /cgpa|cumulative.*grade|overall.*gpa/i,
+                    'marks': /marks|score|cat-?1|cat-?2|fat|assessment|weightage/i,
+                    'attendance': /attendance|attended|classes.*missed|debarment/i,
+                    'assignments': /assignment|deadline|digital.*assessment|da.*due/i,
+                    'timetable': /timetable|schedule|monday|tuesday|wednesday|thursday|friday|class.*timing/i,
+                    'examschedule': /exam.*schedule|exam.*date|venue|seat.*no/i,
+                    'grades': /semester.*grade|gpa.*this.*semester|course.*grade/i,
+                    'gradehistory': /grade.*history|academic.*history|curriculum.*progress|credits.*earned/i,
+                    'leavehistory': /leave.*history|hostel.*leave|leave.*taken/i,
+                    'leavestatus': /leave.*status|pending.*leave|approved.*leave/i,
+                    'paymenthistory': /payment|fee.*receipt|invoice|transaction/i,
+                    'proctordetails': /proctor|faculty.*advisor|cabin.*number/i,
+                    'loginhistory': /login.*history|session.*record|ip.*address/i,
+                    'counsellingrank': /counselling.*rank|hostel.*slot|counseling.*date/i,
+                    'facultyinfo': /faculty.*info|professor|open.*hours|faculty.*search/i,
+                    'academiccalendar': /academic.*calendar|holiday|instructional.*day/i
+                };
 
-    // Extract subject names mentioned (look for course codes like BCSE312P or full names)
-    const subjectMentioned = lastContent.match(/(?:bcse\d{3}[a-z]?|programming|iot|security|privacy|design|fog|edge)/i);
-    const subjectName = subjectMentioned ? subjectMentioned[0] : null;
+                for (const [intent, pattern] of Object.entries(intentPatterns)) {
+                    if (pattern.test(content)) {
+                        detectedIntent = intent;
+                        break;
+                    }
+                }
 
-    // Context-based suggestions
-    if (lastContent.includes('cgpa') || lastContent.includes('grade')) {
-        return [
-            { text: "Show my semester report", icon: GraduationCap },
-            { text: "Which subject has my lowest marks?", icon: BarChart3 },
-            { text: "Show attendance and marks", icon: Calendar }
-        ];
-    }
-    
-    if (lastContent.includes('attendance') || lastContent.includes('classes')) {
-        if (subjectName) {
-            return [
-                { text: `Show marks for ${subjectName}`, icon: BarChart3 },
-                { text: "Which course needs most attention?", icon: Calendar },
-                { text: "Give me a complete overview", icon: GraduationCap }
-            ];
-        }
-        return [
-            { text: "Which course has lowest attendance?", icon: Calendar },
-            { text: "Show marks and assignments", icon: BarChart3 },
-            { text: "Am I at risk of debarment?", icon: Calendar }
-        ];
-    }
-    
-    if (lastContent.includes('marks') || lastContent.includes('score') || lastContent.includes('assessment')) {
-        if (subjectName) {
-            return [
-                { text: `Show attendance for ${subjectName}`, icon: Calendar },
-                { text: `Assignments for ${subjectName}`, icon: BookOpen },
-                { text: "Compare with other subjects", icon: BarChart3 }
-            ];
-        }
-        return [
-            { text: "Which subject am I performing best in?", icon: BarChart3 },
-            { text: "Show attendance and CGPA", icon: Calendar },
-            { text: "Upcoming deadlines", icon: BookOpen }
-        ];
-    }
-    
-    if (lastContent.includes('assignment') || lastContent.includes('deadline')) {
-        return [
-            { text: "Show marks for these subjects", icon: BarChart3 },
-            { text: "Which deadline is most urgent?", icon: BookOpen },
-            { text: "Give me my semester overview", icon: GraduationCap }
-        ];
-    }
+                // Get suggested keys from flow
+                const flowSuggestions = config.flows[detectedIntent] || config.flows['default'];
+                
+                // Build final suggestions with proper icons
+                const suggestions = flowSuggestions.slice(0, 4).map(key => {
+                    const suggestion = config.suggestions[key];
+                    if (!suggestion) return null;
+                    
+                    const category = config.categories[suggestion.category];
+                    return {
+                        text: suggestion.text,
+                        icon: category?.icon || GraduationCap
+                    };
+                }).filter(Boolean);
 
-    if (lastContent.includes('report') || lastContent.includes('overview') || lastContent.includes('summary')) {
-        return [
-            { text: "Which area needs improvement?", icon: BarChart3 },
-            { text: "Show detailed marks breakdown", icon: BarChart3 },
-            { text: "Upcoming assignments only", icon: BookOpen }
-        ];
-    }
+                // If we got less than 3 suggestions, add some variety
+                if (suggestions.length < 3) {
+                    const extras = [
+                        { text: "Show my timetable", icon: Calendar },
+                        { text: "Check exam schedule", icon: CalendarCheck },
+                        { text: "Academic calendar", icon: BookOpen }
+                    ];
+                    suggestions.push(...extras.slice(0, 3 - suggestions.length));
+                }
 
-    // Default fallback suggestions with multi-intent
-    return [
-        { text: "Show my complete semester report", icon: GraduationCap },
-        { text: "Attendance and marks ", icon: Calendar },
-        { text: "Which subject needs focus?", icon: BarChart3 }
-    ];
-};           
+                return suggestions;
+            };
 
 
 if (showLoginForm) {
