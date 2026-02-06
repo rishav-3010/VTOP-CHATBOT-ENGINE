@@ -295,639 +295,7 @@ You can help with:
 Answer warmly and guide them on what you can help with.
 `;
 
-// Response generation using AI
-async function generateResponse(intent, data, originalMessage, session, retryCount = 0) {
-  const { GoogleGenerativeAI } = require("@google/generative-ai");
-  
-  const config = getBestSessionConfig();
-  if (!config) {
-     return "I'm having trouble with my API keys right now (All keys exhausted/blocked). Please tell the developer.";
-  }
-  
-  const { key, model: modelName } = config;
-  const genAI = new GoogleGenerativeAI(key);
-  const model = genAI.getGenerativeModel({ 
-    model: modelName,
-    systemInstruction: VTOP_SYSTEM_INSTRUCTION
-  });
-  
-  const recentHistory = session.conversationHistory.map(msg => ({
-    role: msg.role,
-    parts: [{ text: msg.content }]
-  }));
-  
-  let prompt = '';
-  
-  switch (intent) {
-    case 'getcgpa':
-      prompt = `
-        The user asked: "${originalMessage}"
-        Their CGPA data is: ${JSON.stringify(data, null, 2)}
-        
-        Generate a friendly, encouraging response about their CGPA. Keep it conversational and positive.
-        Include the CGPA value and maybe a motivational comment.
-      `;
-      break;
-      
-    case 'getattendance':
-  prompt = `
-    The user asked: "${originalMessage}"
-    Here's their attendance data: ${JSON.stringify(data, null, 2)}
-    
-    **IMPORTANT NOTE**: This calculator calculates attendance to 74.01% (which VIT considers as 75%).
-    
-    Create a markdown table with these columns:
-    | Course | Attended/Total | Percentage | 75% Alert | Status |
-    
-    For the "75% Alert" column, use the 'alertMessage' field from the data.
-        
-    After the table, add an Analysis section(keep it super short) with:
-    - **Overall Summary**: How many courses are safe, in caution zone, or in danger
-    - **⚠️ Courses Needing Attention** (below 75%): List them with how many classes needed
-    
-    Use markdown formatting (bold, emphasis) for important points.
-    IMP: If user is asking for particular subject attendance then show only that subject attendance not all subjects.
-    and if user is asking for best/worst subject then include that in analysis part only not in table part.
-    and if user is asking for only danger/caution/safe subjects then show only those subjects in table part.
-    and if user is asking for particular subject like IoT or DS etc then show only that subject attendance not all subjects.
-    and if user is asking for classes needed to reach 75% then include that in analysis part only not in table part.
-  `;
-  break;
-      
-    case 'getassignments':
-  prompt = `
-    The user asked: "${originalMessage}"
-    Here's their assignments data: ${JSON.stringify(data, null, 2)}
-    
-    Format assignments as SEPARATE tables for each course:
-    
-    For each course, create:
-    ### Course Name (Course Code)
-    | Assignment | Due Date | Status |
-    |------------|----------|--------|
-    | Assessment - 1 | 22-Sep-2025 | 5 days left |
-    | Assessment - 2 | 31-Oct-2025 | Overdue |
-    
-    Use the 'status' field from the data (already calculated).
-    - Shows "X days overdue" if past due
-    - Shows "Due today!" if due today
-    - Shows "X days left" if upcoming
-    
-    
-    Use emojis and markdown formatting for emphasis on urgent items.
-  `;
-  break;
-
-    case 'getmarks':
-  prompt = `
-    The user asked: "${originalMessage}"
-    Here's their marks data: ${JSON.stringify(data, null, 2)}
-    
-    Format marks as SEPARATE tables for each subject/course:
-    
-    For each course, create:
-    ### Course Name (Course Code)
-    | Assessment | Scored | Maximum | Weightage | WeightageMax |
-    |------------|--------|---------|-----------|------------  |
-    | CAT-1      | X      | Y       | Z         | ZM           |
-    | CAT-2      | X      | Y       | Z         | ZM           |
-    | Total(Bold)| X      | Y       | Z         | ZM           |
-    
-    After each course table, show:
-    - Lost Weightage: ZM - Z
-    
-    If passingInfo exists, add:
-    **🎯 Passing Status:**
-    - Type: Theory/Lab/STS
-    - Status: ✅ Safe / 🔴 Need X marks in FAT to pass
-    
-    
-    Use markdown formatting and emojis for visual appeal.
-    IMP: Sometimes dont ask more than the user asked for example if user is asking for only IoT marks then show only IoT marks not all.
-    and if user is asking for best/worst subject then include that in analysis part only not in table part.
-    and also if user is asking for particular assessment like CAT1 marks then show only CAT1 marks not CAT2 or total.
-    and if user is asking for weightage marks only then show only weightage marks not scored or maximum
-    and if user is asking for only theory or lab marks then show only that not both.
-    and if user is asking for particular subject like IoT or DS etc then show only that subject marks not all subjects.
-    but definetly use markdown even if user is asking for single subject marks
-  `;
-  break;
-
-    case 'getloginhistory':
-      prompt = `
-        The user asked: "${originalMessage}"
-        Here's their login history data: ${JSON.stringify(data, null, 2)}
-        
-        Format as a markdown table with columns:
-        | Date | Time | IP Address | Status |
-        
-        Fill in the login history data.
-        
-        Then add a summary with:
-        - Total logins
-        - Most recent login
-        - Any suspicious activity (if applicable)
-        
-        Use markdown formatting for clarity.
-      `;
-      break;
-
-    case 'getexamschedule':
-      prompt = `
-        The user asked: "${originalMessage}"
-        Here's their exam schedule data: ${JSON.stringify(data, null, 2)}
-        
-        Create separate markdown tables for each exam type (FAT, CAT1, CAT2) with columns:
-        | Course Code | Course Title | Date | Time | Venue | Seat No |
-        
-        Then add a summary section with:
-        - Exam dates timeline
-        - Reporting times
-        - Important reminders
-        
-        Use markdown formatting (bold headers, emphasis for important dates).
-        If user asked for any particular schedule like for FAT then show only for Fat not cat2 or cat1.
-      `;
-      break;
-
-      case 'gettimetable':
-  prompt = `
-    The user asked: "${originalMessage}"
-    Here's their timetable data: ${JSON.stringify(data, null, 2)}
-    
-    Format the timetable in a clean, day-wise view:(Also if user is asking for a particular day then show only for that day not all)
-    
-    ## 📅 Weekly Schedule
-    
-    For each day (Monday to Friday), create:
-    ### Monday
-    | Time | Course | Venue | Slot |
-    |------|--------|-------|---------|
-    | 08:00 - 09:00 AM | CSE1001 - Problem Solving | AB1-G03 | A1 |
-    | ... | ... | ... | ... |
-    
-    
-    
-    Use emojis to make it visually appealing:
-    - 🕐 for time-related info
-    - 📚 for courses
-    - 👨‍🏫 for faculty
-    - 🏢 for venues
-    
-    Use markdown formatting for clarity.
-    Also if there is lab sessions include them appropriately like slot L35+L36 is one column not separately
-  `;
-  break;
-
-    case 'getleavehistory':
-  prompt = `
-    The user asked: "${originalMessage}"
-    Here's their leave history data: ${JSON.stringify(data, null, 2)}
-    
-    Format as a markdown table with columns:
-    | Place | Reason | Type | From → To | Status |
-    
-    Use emojis for status:
-    - ✅ for APPROVED (not cancelled)
-    - ❌ for CANCELLED
-    - ⏳ for PENDING
-    
-    After the table, add a summary with:
-    - Total leaves taken
-    - Approved vs cancelled leaves
-    - Any patterns (frequent leaves, etc.)
-    
-    Use markdown formatting for clarity.
-  `;
-  break;
-
-case 'getgrades':
-  prompt = `
-    The user asked: "${originalMessage}"
-    Here's their semester grades data: ${JSON.stringify(data, null, 2)}
-    
-    Create a markdown table with columns:
-    | Course Code | Course Title | Credits | Total | Grade |
-    
-    Use grade emojis:
-    - 🌟 for S grade
-    - ✅ for A grade
-    - 👍 for B grade
-    - 📘 for C grade
-    - 📙 for D grade
-    - ⚠️ for E grade
-    - ❌ for F grade
-    
-    After the table, show:
-    - GPA for this semester
-    - Total courses
-    - Grade distribution summary
-    
-    Use markdown formatting (bold headers, emphasis).
-  `;
-  break;
-
-case 'getpaymenthistory':
-  prompt = `
-    The user asked: "${originalMessage}"
-    Here's their payment history: ${JSON.stringify(data, null, 2)}
-    
-    Format as a markdown table with columns:
-    | Invoice No | Receipt No | Date | Amount | Campus |
-    
-    After the table, add:
-    - Total amount paid
-    - Total transactions
-    - Latest payment date
-    
-    Use markdown formatting and include ₹ symbol for amounts.
-  `;
-  break;
-
-case 'getproctordetails':
-  prompt = `
-    The user asked: "${originalMessage}"
-    Here's their proctor details: ${JSON.stringify(data, null, 2)}
-    
-    Format the proctor information in a clean way:
-    - Name
-    - Designation
-    - Department
-    - School
-    - Email
-    - Cabin number
-    
-    Use emojis like 👨‍🏫 for name, 📧 for email, 📍 for cabin.
-    Use markdown formatting for readability.
-  `;
-  break;
-
-case 'getgradehistory':
-  prompt = `
-    The user asked: "${originalMessage}"
-    Here's their complete grade history: ${JSON.stringify(data, null, 2)}
-    
-    Create a comprehensive academic history report:
-    
-    1. **Grade Distribution**:
-       Show count for each grade (S, A, B, C, D, E, F, P)
-    
-    2. **Overall Performance**:
-       - CGPA
-       - Total courses completed
-       - Total credits registered vs earned
-    
-    3. **Curriculum Progress**:
-       Show progress for each requirement type (Foundation Core, Discipline Core, etc.)
-       Use ✅ for completed, ⏳ for in-progress
-    
-    4. **Recent Courses** (last 5-10 courses):
-       Table with: Course | Grade | Credits | Exam Month
-    
-    5. **PDF Download**:
-       At the end, add a friendly line like "📄 Want the complete official record? [Download Grade History PDF](/api/downloads/grade-history?sessionId=${session.id})"
-    
-    Use markdown formatting extensively.
-  `;
-  break;
-
-case 'getcounsellingrank':
-  prompt = `
-    The user asked: "${originalMessage}"
-    Here's their counselling rank details: ${JSON.stringify(data, null, 2)}
-    
-    Format the counselling information clearly:
-    - 🎯 Counselling Rank
-    - 👥 Group
-    - 🎫 Slot
-    - ⏰ Report Time
-    - 📍 Venue
-    - 📅 Counseling Date
-    
-    Use emojis and markdown formatting for emphasis.
-  `;
-  break;
-
-case 'getfacultyinfo':
-  prompt = `
-    The user asked: "${originalMessage}"
-    Here's the faculty information: ${JSON.stringify(data, null, 2)}
-    
-    HANDLE THESE SCENARIOS:
-    
-    1. If there's an ERROR (data.error exists):
-       - Show the error message from data.error
-       - Give helpful suggestions (check spelling, use at least 3 characters, etc.)
-    
-    2. If MULTIPLE FACULTIES found (data.requiresSelection === true):
-       - Show data.message
-       - List all faculties with:
-         * Name
-         * Designation
-         * School
-       - Ask user to be more specific or choose one
-    
-    3. If SINGLE FACULTY details provided:
-       - Format clearly with:
-         * 👤 Name: [name]
-         * 🏢 Designation: [designation]
-         * 🏛️ Department: [details['Name of Department']]
-         * 🎓 School: [details['School / Centre Name'] or school]
-         * 📧 Email: [details['E-Mail Id']]
-         * 📍 Cabin: [details['Cabin Number']]
-         * ⏰ Open Hours (if openHours array has data):
-           List each day and timing
-    
-    Use markdown formatting for readability and emojis for visual appeal.
-  `;
-  break;
-  case 'getacademiccalendar':
-  const currentDate = new Date().toDateString();
-  prompt = `
-    The user asked: "${originalMessage}"
-    CURRENT REAL DATE: ${currentDate}
-    Here's the academic calendar data: ${JSON.stringify(data, null, 2)}
-    
-    IMPORTANT INSTRUCTIONS:
-    1. **Context Awareness**: Use CURRENT DATE (${currentDate}) to answer relative questions (e.g., "next working saturday", "upcoming holidays", "how many days left").
-    2. **Smart Filtering**: 
-       - If user asks for specific events (e.g., "When is Pongal?", "Holidays in Jan"), show ONLY those specific dates. DO NOT show the whole calendar.
-       - If user asks for "next working Saturday", find the next 'Instructional Day' falling on a Saturday AFTER ${currentDate}.
-    3. **Full Calendar**: Only show the full month-wise view if explicitly asked (e.g., "show academic calendar", "full schedule").
-
-    Format for Full Calendar (if requested):
-    For each month (July to November):
-    ### 📅 MONTH YEAR
-    - Show events with emojis: 🎯 Start, 📚 Instructional, 🏖️ Holiday, 📝 Exam
-    
-    Format for Specific/Relative Queries:
-    - 📅 **Event Name**: Date - Note (if any)
-    
-    Use markdown formatting.
-  `;
-  break;
-  case 'getleavestatus':
-  prompt = `
-    The user asked: "${originalMessage}"
-    Here's their current leave status: ${JSON.stringify(data, null, 2)}
-    
-    Format as a markdown table with columns:
-    | Place | Reason | Type | From → To | Status |
-    
-    Use emojis for status:
-    - ✅ for APPROVED
-    - ❌ for REJECTED/CANCELLED
-    - ⏳ for PENDING
-    
-    After the table, add a summary with:
-    - Active/pending leaves
-    - Recently approved leaves
-    - Any action needed
-    
-    Use markdown formatting for clarity.
-  `;
-  break;
-  case 'downloadgradehistory':
-  prompt = `
-    The user asked: "${originalMessage}"
-    
-    Respond by providing a direct link to download their Grade History PDF.
-    
-    Use this EXACT Markdown link format:
-    [📄 Download Grade History PDF](/api/downloads/grade-history?sessionId=${session.id})
-    
-    Tell them the file will contain their complete academic performance record.
-  `;
-  break;
-    default:
-      prompt = `
-      The user asked: "${originalMessage}"
-      
-      Based on our conversation, answer their question naturally.
-      If they're asking comparative questions like "which subject is worst" or "what needs attention",
-      acknowledge that you can fetch that data for them and ask if they'd like you to show it.
-    `;
-  break;
-  }
-
-  try {
-    const result = await model.generateContent({
-      contents: [
-        ...recentHistory,
-        {
-          role: 'user',
-          parts: [{ text: prompt }]
-        }
-      ]
-    });
-    return result.response.text().trim();
-  } catch (error) {
-    if (error.status === 429 || error.message?.includes('429') || error.message?.includes('quota')) {
-       const isDaily = error.message?.toLowerCase().includes("daily") || error.message?.includes("GenerateRequestsPerDay");
-       const type = isDaily ? "DAILY LIMIT" : "RPM LIMIT";
-
-       if (!isDaily) console.warn(`⚠️ ${type} (429) during response generation on [${modelName}]. Rotating...`);
-
-       blockKey(key, modelName, error.message); 
-       if (retryCount < GEMINI_KEYS.length * 2) {
-         return generateResponse(intent, data, originalMessage, session, retryCount + 1); 
-       }
-       return "My daily request limit has been reached (429). Please try again later.";
-    } else if (error.message?.includes('503') || error.message?.includes('overloaded')) {
-       console.warn('Model overloaded (503) during response generation, rotating key...');
-       if (retryCount < GEMINI_KEYS.length) {
-         return generateResponse(intent, data, originalMessage, session, retryCount + 1); 
-       }
-      return "The AI model is currently overloaded with too many requests. Please try again in a moment.";
-    } else {
-      console.error('Error generating response:', error.message || error);
-    }
-    return "I'm having trouble generating a response right now. Please try again.";
-  }
-}
-// Generate response with multiple data sources
-async function generateResponseMulti(intents, allData, originalMessage, session, retryCount = 0) {
-  const { GoogleGenerativeAI } = require("@google/generative-ai");
-  
-  const config = getBestSessionConfig();
-  if (!config) {
-     return "I'm having trouble with my API keys right now (All keys exhausted/blocked). Please tell the developer.";
-  }
-  
-  const { key, model: modelName } = config;
-  const genAI = new GoogleGenerativeAI(key);
-  const model = genAI.getGenerativeModel({ 
-    model: modelName,
-    systemInstruction: VTOP_SYSTEM_INSTRUCTION
-  });
-  
-  const recentHistory = session.conversationHistory.map(msg => ({
-    role: msg.role,
-    parts: [{ text: msg.content }]
-  }));
-  
-  // Build comprehensive data context and prompts based on intents
-  let dataContext = '';
-  let promptSections = [];
-  
-  // CGPA
-  if (allData.cgpa && intents.includes('getcgpa')) {
-    dataContext += `\nCGPA Data: ${JSON.stringify(allData.cgpa, null, 2)}`;
-    promptSections.push(`For CGPA: Generate a friendly, encouraging response about their CGPA. Keep it conversational and positive. Include the CGPA value and maybe a motivational comment.`);
-  }
-  
-  // Attendance
-  if (allData.attendance && intents.includes('getattendance')) {
-  dataContext += `\nAttendance Data: ${JSON.stringify(allData.attendance, null, 2)}`;
-  promptSections.push(`For Attendance: Create a table with columns: Course | Attended/Total | Percentage | 75% Alert | Status. Use 'alertMessage' for alerts and 'alertStatus' for status emojis (🔴 danger, ⚠️ caution, ✅ safe). Add analysis of courses needing attention with specific class counts needed.`);
-}
-  
-  // Assignments
-if (allData.assignments && intents.includes('getassignments')) {
-  dataContext += `\nAssignments Data: ${JSON.stringify(allData.assignments, null, 2)}`;
-  promptSections.push(`For Assignments: Create SEPARATE tables for each course. Format: ### Course Name (Code), then table with columns: | Assignment | Due Date | Days Left |. Show "X days overdue" if past, "Due today!" if today, "X days left" if upcoming. Then summary with overdue and urgent deadlines (3-7 days).`);
-}
-  
-  // Marks
-if (allData.marks && intents.includes('getmarks')) {
-  dataContext += `\nMarks Data: ${JSON.stringify(allData.marks, null, 2)}`;
-  promptSections.push(`For Marks: Create SEPARATE tables for each subject. Format: ### Course Name (Code), then table with columns: | Assessment | Scored | Maximum | Weightage | Weightage% |. Add course total after each table. Then overall analysis in very short`);
-}
-  
-  // Login History
-  if (allData.loginHistory && intents.includes('getloginhistory')) {
-    dataContext += `\nLogin History: ${JSON.stringify(allData.loginHistory, null, 2)}`;
-    promptSections.push(`For Login History: Format as a markdown table with columns: | Date | Time | IP Address | Status |. Fill in the login history data. Then add a summary with: Total logins, Most recent login, Any suspicious activity (if applicable). Use markdown formatting for clarity.`);
-  }
-  
-  // Exam Schedule
-if (allData.examSchedule && intents.includes('getexamschedule')) {
-    dataContext += `\nExam Schedule: ${JSON.stringify(allData.examSchedule, null, 2)}`;
-    promptSections.push(`For Exam Schedule: Create separate markdown tables for each exam type (FAT, CAT1, CAT2) with columns: | Course Code | Course Title | Date | Time | Venue | Seat No |. Then add a summary section with: Exam dates timeline, Reporting times, Important reminders. Use markdown formatting (bold headers, emphasis for important dates).`);
-  }
-
-  // Timetable
-if (allData.timetable && intents.includes('gettimetable')) {
-  dataContext += `\nTimetable Data: ${JSON.stringify(allData.timetable, null, 2)}`;
-  promptSections.push(`For Timetable: Create day-wise tables (Monday-Friday) with columns: Time | Course | Venue | Faculty. Add a course summary with total classes per week and observations.`);
-}
-
-// Leave History
-if (allData.leaveHistory && intents.includes('getleavehistory')) {
-  dataContext += `\nLeave History: ${JSON.stringify(allData.leaveHistory, null, 2)}`;
-  promptSections.push(`For Leave History: Create a table with columns: | Place | Reason | Type | From → To | Status |. Use ✅ for approved, ❌ for cancelled, ⏳ for pending. Add summary with total leaves and approval rate.`);
-}
-
-// Leave Status
-if (allData.leaveStatus && intents.includes('getleavestatus')) {
-  dataContext += `\nLeave Status: ${JSON.stringify(allData.leaveStatus, null, 2)}`;
-  promptSections.push(`For Leave Status: Create table with current leave applications showing place, reason, type, dates, and status with appropriate emojis.`);
-}
-
-// Grades
-if (allData.grades && intents.includes('getgrades')) {
-  dataContext += `\nGrades Data: ${JSON.stringify(allData.grades, null, 2)}`;
-  promptSections.push(`For Grades: Create a table with columns: | Course Code | Course Title | Credits | Total | Grade |. Use grade emojis (🌟 S, ✅ A, 👍 B, etc.). Show GPA and grade distribution summary.`);
-}
-
-// Payment History
-if (allData.paymentHistory && intents.includes('getpaymenthistory')) {
-  dataContext += `\nPayment History: ${JSON.stringify(allData.paymentHistory, null, 2)}`;
-  promptSections.push(`For Payment History: Create a table with columns: | Invoice No | Receipt No | Date | Amount | Campus |. Show total amount paid and transaction count.`);
-}
-
-// Proctor Details
-if (allData.proctorDetails && intents.includes('getproctordetails')) {
-  dataContext += `\nProctor Details: ${JSON.stringify(allData.proctorDetails, null, 2)}`;
-  promptSections.push(`For Proctor Details: Format with emojis (👨‍🏫 name, 📧 email, 📍 cabin). Include name, designation, department, school, email, cabin.`);
-}
-
-// Grade History
-if (allData.gradeHistory && intents.includes('getgradehistory')) {
-  dataContext += `\nGrade History: ${JSON.stringify(allData.gradeHistory, null, 2)}`;
-  promptSections.push(`For Grade History: Show comprehensive academic report with grade distribution, CGPA, credits, curriculum progress, and recent courses table.`);
-}
-
-// Counselling Rank
-if (allData.counsellingRank && intents.includes('getcounsellingrank')) {
-  dataContext += `\nCounselling Rank: ${JSON.stringify(allData.counsellingRank, null, 2)}`;
-  promptSections.push(`For Counselling Rank: Format with emojis showing rank, group, slot, report time, venue, and counseling date.`);
-}
-
-// Faculty Info
-if (allData.facultyInfo && intents.includes('getfacultyinfo')) {
-  dataContext += `\nFaculty Info: ${JSON.stringify(allData.facultyInfo, null, 2)}`;
-  promptSections.push(`For Faculty Info: If multiple results, list all. If single result, show details with name, designation, department, school, email, cabin, open hours in structured way.`);
-}
-
-// Academic Calendar
-if (allData.academicCalendar && intents.includes('getacademiccalendar')) {
-  const currentDate = new Date().toDateString();
-  dataContext += `\nAcademic Calendar: ${JSON.stringify(allData.academicCalendar, null, 2)}\nCURRENT DATE: ${currentDate}`;
-  promptSections.push(`For Academic Calendar: Use CURRENT DATE (${currentDate}) for relative queries ("next Saturday"). Only show specific events if asked (e.g., "Pongal only"). If full calendar requested, show month-wise summary.`);
-}
-
-  // Build the final prompt
-  let prompt = `The user asked: "${originalMessage}"
-
-You have access to multiple data sources:
-${dataContext}
-
-FORMATTING INSTRUCTIONS:
-${promptSections.join('\n')}
-
-IMPORTANT:
-- Present ALL the data the user requested
-- Organize it clearly with headers for each section
-- Keep it concise but comprehensive
-- Add a brief summary at the start if multiple data types
-- Use proper formatting for readability`;
-
-  try {
-    const result = await model.generateContent({
-      contents: [
-        ...recentHistory,
-        {
-          role: 'user',
-          parts: [{ text: prompt }]
-        }
-      ]
-    });
-    return result.response.text().trim();
-  } catch (error) {
-    if (error.status === 429 || error.message?.includes('429') || error.message?.includes('quota')) {
-       const isDaily = error.message?.toLowerCase().includes("daily") || error.message?.includes("GenerateRequestsPerDay");
-       const type = isDaily ? "DAILY LIMIT" : "RPM LIMIT";
-
-       if (!isDaily) console.warn(`⚠️ ${type} (429) during multi-response generation on [${modelName}]. Rotating...`);
-
-       blockKey(key, modelName, error.message); 
-       if (retryCount < GEMINI_KEYS.length * 2) {
-         return generateResponseMulti(intents, allData, originalMessage, session, retryCount + 1); 
-       }
-       return "My daily request limit has been reached (429). Please try again later.";
-    } else if (error.message?.includes('503') || error.message?.includes('overloaded')) {
-       console.warn('Model overloaded (503) during multi-response generation, rotating key...');
-       if (retryCount < GEMINI_KEYS.length) {
-         return generateResponseMulti(intents, allData, originalMessage, session, retryCount + 1); 
-       }
-      return "The AI model is currently overloaded with too many requests. Please try again in a moment.";
-    } else {
-      console.error('Error generating response:', error.message || error);
-    }
-    return "I'm having trouble generating a response right now. Please try again.";
-  }
-}
-
-
 // ===== FIXED STREAMING RESPONSE GENERATION WITH RETRY LOGIC =====
-
-// Add this function AFTER your generateResponseMulti() function and BEFORE the /api/chat endpoint
-
-/**
- * Generates streaming response with automatic retry on 429 errors
- * This mirrors the retry logic from your old generateResponse() function
- */
 async function generateStreamingResponse(prompt, session, res, retryCount = 0) {
   const { GoogleGenerativeAI } = require("@google/generative-ai");
   
@@ -1165,36 +533,36 @@ app.post('/api/chat', async (req, res) => {
               allData.examSchedule = await getExamSchedule(authData, session, sessionId);
               break;
             case 'gettimetable':
-  allData.timetable = await getTimetable(authData, session, sessionId);
-  break;
+          allData.timetable = await getTimetable(authData, session, sessionId);
+          break;
             case 'getleavehistory':
-  allData.leaveHistory = await getLeaveHistory(authData, session, sessionId);
-  break;
-  case 'getleavestatus':
-  allData.leaveStatus = await getLeaveStatus(authData, session, sessionId);
-  break;
-case 'getgrades':
-  allData.grades = await getGrades(authData, session, sessionId);
-  break;
-case 'getpaymenthistory':
-  allData.paymentHistory = await getPaymentHistory(authData, session, sessionId);
-  break;
-case 'getproctordetails':
-  allData.proctorDetails = await getProctorDetails(authData, session, sessionId);
-  break;
-case 'getgradehistory':
-  allData.gradeHistory = await getGradeHistory(authData, session, sessionId);
-  break;
-case 'getcounsellingrank':
-  allData.counsellingRank = await getCounsellingRank(authData, session, sessionId);
-  break;
-case 'getfacultyinfo':
-  // Faculty info requires facultyName parameter - handle separately
-  console.log(`[${sessionId}] Faculty info requires name parameter`);
-  break;
-case 'getacademiccalendar':
-  allData.academicCalendar = await getAcademicCalendar(authData, session, sessionId);
-  break;
+          allData.leaveHistory = await getLeaveHistory(authData, session, sessionId);
+          break;
+          case 'getleavestatus':
+          allData.leaveStatus = await getLeaveStatus(authData, session, sessionId);
+          break;
+        case 'getgrades':
+          allData.grades = await getGrades(authData, session, sessionId);
+          break;
+        case 'getpaymenthistory':
+          allData.paymentHistory = await getPaymentHistory(authData, session, sessionId);
+          break;
+        case 'getproctordetails':
+          allData.proctorDetails = await getProctorDetails(authData, session, sessionId);
+          break;
+        case 'getgradehistory':
+          allData.gradeHistory = await getGradeHistory(authData, session, sessionId);
+          break;
+        case 'getcounsellingrank':
+          allData.counsellingRank = await getCounsellingRank(authData, session, sessionId);
+          break;
+        case 'getfacultyinfo':
+          // Faculty info requires facultyName parameter - handle separately
+          console.log(`[${sessionId}] Faculty info requires name parameter`);
+          break;
+        case 'getacademiccalendar':
+          allData.academicCalendar = await getAcademicCalendar(authData, session, sessionId);
+          break;
           }
         } catch (error) {
           console.error(`[${sessionId}] Error fetching ${intent}:`, error.message);
@@ -1346,7 +714,7 @@ case 'getacademiccalendar':
       }
       if (allData.gradeHistory && intents.includes('getgradehistory')) {
         dataContext += `\nGrade History: ${JSON.stringify(allData.gradeHistory, null, 2)}`;
-        promptSections.push(`For Grade History: Show comprehensive academic report with grade distribution, CGPA, credits, curriculum progress, and recent courses table.`);
+        promptSections.push(`For Grade History: Show comprehensive academic report with grade distribution, CGPA, credits, curriculum progress, and recent courses table. At the end, add: 📄 Want the complete official record? [Download Grade History PDF](/api/downloads/grade-history?sessionId=${session.id})`);
       }
       if (allData.counsellingRank && intents.includes('getcounsellingrank')) {
         dataContext += `\nCounselling Rank: ${JSON.stringify(allData.counsellingRank, null, 2)}`;
@@ -1462,11 +830,52 @@ case 'getacademiccalendar':
           break;
 
         case 'getexamschedule':
-          prompt = `The user asked: "${message}"\nHere's their exam schedule data: ${JSON.stringify(data, null, 2)}\n\nCreate separate markdown tables for each exam type (FAT, CAT1, CAT2) with columns:\n| Course Code | Course Title | Date | Time | Venue | Seat No |`;
+          prompt = `
+            The user asked: "${message}"
+            Here's their exam schedule data: ${JSON.stringify(data, null, 2)}
+            
+            Create separate markdown tables for each exam type (FAT, CAT1, CAT2) with columns:
+            | Course Code | Course Title | Date | Time | Venue | Seat No |
+            
+            Then add a summary section with:
+            - Exam dates timeline
+            - Reporting times
+            - Important reminders
+            
+            Use markdown formatting (bold headers, emphasis for important dates).
+            If user asked for any particular schedule like for FAT then show only for Fat not cat2 or cat1.
+          `;
           break;
-        case 'gettimetable':
-          prompt = `The user asked: "${message}"\nHere's their timetable data: ${JSON.stringify(data, null, 2)}\n\nFormat the timetable in a clean, day-wise view. For each day (Monday to Friday), create:\n### Monday\n| Time | Course | Venue | Slot |`;
-          break;
+
+          case 'gettimetable':
+      prompt = `
+        The user asked: "${message}"
+        Here's their timetable data: ${JSON.stringify(data, null, 2)}
+        
+        Format the timetable in a clean, day-wise view:(Also if user is asking for a particular day then show only for that day not all)
+        
+        ## 📅 Weekly Schedule
+        
+        For each day (Monday to Friday), create:
+        ### Monday
+        | Time | Course | Venue | Slot |
+        |------|--------|-------|---------|
+        | 08:00 - 09:00 AM | CSE1001 - Problem Solving | AB1-G03 | A1 |
+        | ... | ... | ... | ... |
+        
+        
+        
+        Use emojis to make it visually appealing:
+        - 🕐 for time-related info
+        - 📚 for courses
+        - 👨‍🏫 for faculty
+        - 🏢 for venues
+        
+        Use markdown formatting for clarity.
+        Also if there is lab sessions include them appropriately like slot L35+L36 is one column not separately
+      `;
+      break;
+
         case 'getleavehistory':
           prompt = `The user asked: "${message}"\nHere's their leave history data: ${JSON.stringify(data, null, 2)}\n\nFormat as a markdown table with columns:\n| Place | Reason | Type | From → To | Status |\nUse emojis: ✅ for APPROVED, ❌ for CANCELLED, ⏳ for PENDING`;
           break;
