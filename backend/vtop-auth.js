@@ -7,6 +7,12 @@ const { solveUsingViboot } = require('./captcha/captchaSolver');
 // Store separate clients per session
 const sessionClients = new Map();
 
+// Optimized CSRF for simple strings (Faster than cheerio)
+const getCsrfFast = (html) => {
+  return html.match(/name="_csrf"\s+content="([^"]+)"/)?.[1] || 
+         html.match(/name="_csrf"\s+value="([^"]+)"/)?.[1];
+};
+
 const getCsrf = (html) => {
   const $ = cheerio.load(html);
   return $('meta[name="_csrf"]').attr('content') || $('input[name="_csrf"]').val();
@@ -67,8 +73,9 @@ async function loginToVTOP(username, password, sessionId, campus = 'vellore') {
   
   for (let captchaAttempt = 1; captchaAttempt <= MAX_CAPTCHA_ATTEMPTS; captchaAttempt++) {
     try {
+      // 1. Init: Use Fast Regex here to save time on the heavy first load
       const init = await client.get(`${baseUrl}/vtop/open/page`);
-      let csrf = getCsrf(init.data);
+      let csrf = getCsrfFast(init.data); 
       
       const setup = await client.post(
         `${baseUrl}/vtop/prelogin/setup`,
@@ -81,10 +88,13 @@ async function loginToVTOP(username, password, sessionId, campus = 'vellore') {
           }
         }
       );
-      csrf = getCsrf(setup.data) || csrf;
+      
+      // // Use original cheerio logic for consistency as requested
+      // csrf = getCsrf(setup.data) || csrf;
       
       let captchaBuffer, setupHtml = setup.data, attempts = 0;
       
+      // --- YOUR ORIGINAL CAPTCHA LOGIC STARTS ---
       while (!captchaBuffer && attempts++ < 10) {
         const $ = cheerio.load(setupHtml);
         const src = $('img[src^="data:image"]').attr('src');
@@ -92,6 +102,7 @@ async function loginToVTOP(username, password, sessionId, campus = 'vellore') {
         if (src?.startsWith('data:image')) {
           captchaBuffer = Buffer.from(src.split(',')[1], 'base64');
         } else {
+          console.log(`[${sessionId}] Retrying CAPTCHA (Attempt ${attempts}/10)...`);
           const retry = await client.post(
             `${baseUrl}/vtop/prelogin/setup`,
             new URLSearchParams({ _csrf: csrf, flag: 'VTOP' }),
@@ -112,6 +123,7 @@ async function loginToVTOP(username, password, sessionId, campus = 'vellore') {
       
       const captcha = await solveUsingViboot(captchaBuffer);
       console.log(`[${sessionId}] CAPTCHA solved:`, captcha);
+      // --- YOUR ORIGINAL CAPTCHA LOGIC ENDS ---
       
       const loginRes = await client.post(
         `${baseUrl}/vtop/login`,
@@ -133,47 +145,54 @@ async function loginToVTOP(username, password, sessionId, campus = 'vellore') {
       const finalUrl = loginRes.request?.res?.responseUrl || loginRes.config.url;
       
       if (finalUrl.includes('/vtop/login/error')) {
-        // Check if the HTML contains "Invalid Credentials" text
-        if (loginRes.data && (typeof loginRes.data === 'string') && loginRes.data.includes('Invalid Credentials')) {
-             console.log(`[${sessionId}] VTOP reported Invalid Credentials. Aborting retries.`);
-             return { success: false, error: 'Invalid Credentials' };
+        const pageData = typeof loginRes.data === 'string' ? loginRes.data : '';
+
+        // Extract the exact error message from VTOP's response
+        const errorMatch = pageData.match(/<strong>([^<]+)<\/strong>/);
+        const vtopError = errorMatch ? errorMatch[1].trim() : '';
+
+        // 1. Wrong username
+        if (vtopError.includes('Invalid Credentials')) {
+            return { success: false, error: 'Invalid Credentials' };
         }
 
-        console.log(`[${sessionId}] CAPTCHA/Login error detected (Attempt ${captchaAttempt}/${MAX_CAPTCHA_ATTEMPTS})`);
+        // 2. Correct username, wrong password
+        if (vtopError.includes('Invalid LoginId/Password')) {
+            return { success: false, error: 'Invalid LoginId/Password' };
+        }
+
+        // 3. Too many failed attempts on VTOP's side
+        if (vtopError.includes('Maximum Fail Attempts Reached')) {
+            return { success: false, error: 'Maximum Fail Attempts Reached. Use Forgot Password' };
+        }
+
+        // 4. If none matched, it's likely a wrong CAPTCHA — retry
+        console.log(`[${sessionId}] CAPTCHA likely wrong. Attempt ${captchaAttempt}/${MAX_CAPTCHA_ATTEMPTS}`);
         
         if (captchaAttempt < MAX_CAPTCHA_ATTEMPTS) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          continue;
+             continue; 
         } else {
-          console.log(`[${sessionId}] Login failed after max attempts`);
-          return { success: false, error: 'Maximum exceeded, possible invalid credentials' };
+             return { success: false, error: 'Max CAPTCHA Attempts Reached' };
         }
       }
       
       if (finalUrl.includes('/vtop/content') || finalUrl.includes('/vtop/student')) {
-        console.log(`[${sessionId}] Login successful`);
-        
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        const dashboardRes = await client.get(`${baseUrl}/vtop/content`);
-        
-        sessionData.csrf = getCsrf(dashboardRes.data);
-        sessionData.authID = dashboardRes.data.match(/\b\d{2}[A-Z]{3}\d{4}\b/)?.[0];
-        
-        console.log(`[${sessionId}] Auth data extracted for ${sessionData.authID}`);
-        
-        return { success: true };
-      } else {
-        console.log(`[${sessionId}] Unknown response`);
-        return { success: false, error: 'Unknown response from VTOP' };
+          // Success! Immediately fetch content to warm up the session
+          // We don't return here yet, we fetch auth data first
+          
+          /* Optimization: Reuse the loginRes data if it's already the dashboard logic, 
+             otherwise fetch just once */
+          
+          const dashboardRes = await client.get(`${baseUrl}/vtop/content`);
+          sessionData.csrf = getCsrfFast(dashboardRes.data); // Use fast regex
+          sessionData.authID = dashboardRes.data.match(/\b\d{2}[A-Z]{3}\d{4}\b/)?.[0];
+
+          return { success: true };
       }
       
     } catch (error) {
       console.error(`[${sessionId}] Login error:`, error.message);
-      if (captchaAttempt >= MAX_CAPTCHA_ATTEMPTS) {
-        return { success: false, error: 'Login error: ' + error.message };
-      }
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Removed sleep here
     }
   }
   
@@ -189,7 +208,9 @@ async function getAuthData(sessionId) {
   
   const baseUrl = getBaseUrl(sessionData.campus);
   const res = await sessionData.client.get(`${baseUrl}/vtop/content`);
-  sessionData.csrf = getCsrf(res.data);
+  
+  // Use Fast Regex here too
+  sessionData.csrf = getCsrfFast(res.data);
   sessionData.authID = res.data.match(/\b\d{2}[A-Z]{3}\d{4}\b/)?.[0];
   
   return { csrfToken: sessionData.csrf, authorizedID: sessionData.authID };

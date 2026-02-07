@@ -62,7 +62,6 @@ async function getCGPA(authData, session, sessionId) {
     
     if (session) {
       session.cache.cgpa = { data: cgpaData, timestamp: Date.now() };
-      console.log(`[${sessionId}] Cache set: cgpa`);
     }
     
     console.log(`[${sessionId}] CGPA fetched for ${authData.authorizedID}`);
@@ -206,7 +205,6 @@ async function getAttendance(authData, session, sessionId, semesterId = null) {
     
     if (session) {
       session.cache.attendance = { data: attendanceData, timestamp: Date.now() };
-      console.log(`[${sessionId}] Cache set: attendance`);
     }
     
     console.log(`[${sessionId}] Attendance fetched for ${authData.authorizedID}`);
@@ -342,7 +340,6 @@ async function getMarks(authData, session, sessionId, semesterId = null) {
     
     if (session) {
       session.cache.marks = { data: courses, timestamp: Date.now() };
-      console.log(`[${sessionId}] Cache set: marks`);
     }
     
     console.log(`[${sessionId}] Marks fetched for ${authData.authorizedID}`);
@@ -403,7 +400,8 @@ async function getAssignments(authData, session, sessionId, semesterId = null) {
       }
     });
     
-    for (const subject of subjects) {
+    // OPTIMIZATION: Fetch all subject assignments in PARALLEL using Promise.all
+    await Promise.all(subjects.map(async (subject) => {
       try {
         const aRes = await client.post(
           `${baseUrl}/vtop/examinations/processDigitalAssignment`,
@@ -485,13 +483,14 @@ async function getAssignments(authData, session, sessionId, semesterId = null) {
       } catch (error) {
         console.log(`[${sessionId}] Warning: Could not fetch assignments for ${subject.courseCode}`);
       }
-    }
+    }));
+    
+    // Sort logic isn't strictly needed for response speed, but you can add it here if order matters
     
     const assignmentsData = { subjects };
     
     if (session) {
       session.cache.assignments = { data: assignmentsData, timestamp: Date.now() };
-      console.log(`[${sessionId}] Cache set: assignments`);
     }
     
     console.log(`[${sessionId}] Assignments fetched for ${authData.authorizedID}`);
@@ -549,7 +548,6 @@ async function getLoginHistory(authData, session, sessionId) {
     
     if (session) {
       session.cache.loginHistory = { data: loginHistory, timestamp: Date.now() };
-      console.log(`[${sessionId}] Cache set: loginHistory`);
     }
     
     console.log(`[${sessionId}] Login History fetched for ${authData.authorizedID}`);
@@ -657,7 +655,6 @@ async function getExamSchedule(authData, session, sessionId, semesterId = null) 
     
     if (session) {
       session.cache.examSchedule = { data: examSchedule, timestamp: Date.now() };
-      console.log(`[${sessionId}] Cache set: examSchedule`);
     }
     
     console.log(`[${sessionId}] Exam Schedule fetched for ${authData.authorizedID}`);
@@ -895,7 +892,6 @@ async function getTimetable(authData, session, sessionId, semesterId = null) {
     
     if (session) {
       session.cache.timetable = { data: timetableData, timestamp: Date.now() };
-      console.log(`[${sessionId}] Cache set: timetable`);
     }
     
     console.log(`[${sessionId}] Timetable fetched for ${authData.authorizedID}`);
@@ -909,10 +905,8 @@ async function getTimetable(authData, session, sessionId, semesterId = null) {
 async function getLeaveHistory(authData, session, sessionId) {
   try {
     if (isCacheValid(session, 'leaveHistory')) {
-      console.log(`[${sessionId}] Cache hit: leaveHistory`);
       return session.cache.leaveHistory.data;
     }
-
     console.log(`[${sessionId}] Fetching Leave History...`);
     const client = getClient(sessionId);
     const baseUrl = getBaseUrl(getCampus(sessionId));
@@ -924,16 +918,10 @@ async function getLeaveHistory(authData, session, sessionId) {
         authorizedID: authData.authorizedID,
         _csrf: authData.csrfToken
       }),
-      {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Referer': `${baseUrl}/vtop/content`,
-          'X-Requested-With': 'XMLHttpRequest'
-        }
-      }
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': `${baseUrl}/vtop/content`, 'X-Requested-With': 'XMLHttpRequest' } }
     );
     
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // OPTIMIZATION: Removed sleep(500)
     
     const res = await client.post(
       `${baseUrl}/vtop/hostels/student/leave/6`,
@@ -944,13 +932,7 @@ async function getLeaveHistory(authData, session, sessionId) {
         form: 'undefined',
         control: 'history'
       }),
-      {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Referer': `${baseUrl}/vtop/hostels/student/leave/1`,
-          'X-Requested-With': 'XMLHttpRequest'
-        }
-      }
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': `${baseUrl}/vtop/hostels/student/leave/1`, 'X-Requested-With': 'XMLHttpRequest' } }
     );
     
     const $ = cheerio.load(res.data);
@@ -972,13 +954,10 @@ async function getLeaveHistory(authData, session, sessionId) {
         }
       }
     });
-    
+
     if (session) {
-      session.cache.leaveHistory = { data: leaveHistory, timestamp: Date.now() };
-      console.log(`[${sessionId}] Cache set: leaveHistory`);
+        session.cache.leaveHistory = { data: leaveHistory, timestamp: Date.now() };
     }
-    
-    console.log(`[${sessionId}] Leave History fetched for ${authData.authorizedID}`);
     return leaveHistory;
   } catch (error) {
     console.error(`[${sessionId}] Leave History fetch error:`, error.message);
@@ -989,18 +968,12 @@ async function getLeaveHistory(authData, session, sessionId) {
 async function getGrades(authData, session, sessionId, semesterId = 'VL20252601') {
   try {
     if (isCacheValid(session, 'grades')) {
-      console.log(`[${sessionId}] Cache hit: grades`);
       return session.cache.grades.data;
     }
-
     console.log(`[${sessionId}] Fetching Grades...`);
     const client = getClient(sessionId);
     const campus = getCampus(sessionId);
     const baseUrl = getBaseUrl(campus);
-    
-    // FIX: Dynamic Semester ID or Default if null
-    // Note: Grades often use previous sem ID, so check if CHENNAI needs diff ID here
-    // For now, using same logic or default fallback
     const currentSemId = semesterId || getDefaultSemesterId(campus);
 
     await client.post(
@@ -1010,16 +983,10 @@ async function getGrades(authData, session, sessionId, semesterId = 'VL20252601'
         authorizedID: authData.authorizedID,
         _csrf: authData.csrfToken
       }),
-      {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Referer': `${baseUrl}/vtop/content`,
-          'X-Requested-With': 'XMLHttpRequest'
-        }
-      }
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': `${baseUrl}/vtop/content`, 'X-Requested-With': 'XMLHttpRequest' } }
     );
     
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // OPTIMIZATION: Removed sleep(500)
     
     const res = await client.post(
       `${baseUrl}/vtop/examinations/examGradeView/doStudentGradeView`,
@@ -1028,13 +995,7 @@ async function getGrades(authData, session, sessionId, semesterId = 'VL20252601'
         _csrf: authData.csrfToken,
         semesterSubId: currentSemId
       }),
-      {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Referer': `${baseUrl}/vtop/examinations/examGradeView/StudentGradeView`,
-          'X-Requested-With': 'XMLHttpRequest'
-        }
-      }
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': `${baseUrl}/vtop/examinations/examGradeView/StudentGradeView`, 'X-Requested-With': 'XMLHttpRequest' } }
     );
     
     const $ = cheerio.load(res.data);
@@ -1086,15 +1047,10 @@ async function getGrades(authData, session, sessionId, semesterId = 'VL20252601'
         grades.push(grade);
       }
     });
-    
     const gradesData = { grades, gpa };
-    
     if (session) {
-      session.cache.grades = { data: gradesData, timestamp: Date.now() };
-      console.log(`[${sessionId}] Cache set: grades`);
+        session.cache.grades = { data: gradesData, timestamp: Date.now() };
     }
-    
-    console.log(`[${sessionId}] Grades fetched for ${authData.authorizedID}`);
     return gradesData;
   } catch (error) {
     console.error(`[${sessionId}] Grades fetch error:`, error.message);
@@ -1108,7 +1064,6 @@ async function getPaymentHistory(authData, session, sessionId) {
       console.log(`[${sessionId}] Cache hit: paymentHistory`);
       return session.cache.paymentHistory.data;
     }
-
     console.log(`[${sessionId}] Fetching Payment History...`);
     const client = getClient(sessionId);
     const baseUrl = getBaseUrl(getCampus(sessionId));
@@ -1120,13 +1075,7 @@ async function getPaymentHistory(authData, session, sessionId) {
         authorizedID: authData.authorizedID,
         _csrf: authData.csrfToken
       }),
-      {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Referer': `${baseUrl}/vtop/content`,
-          'X-Requested-With': 'XMLHttpRequest'
-        }
-      }
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': `${baseUrl}/vtop/content`, 'X-Requested-With': 'XMLHttpRequest' } }
     );
     
     const $ = cheerio.load(res.data);
@@ -1159,10 +1108,8 @@ async function getPaymentHistory(authData, session, sessionId) {
     
     if (session) {
       session.cache.paymentHistory = { data: paymentData, timestamp: Date.now() };
-      console.log(`[${sessionId}] Cache set: paymentHistory`);
     }
     
-    console.log(`[${sessionId}] Payment History fetched for ${authData.authorizedID}`);
     return paymentData;
   } catch (error) {
     console.error(`[${sessionId}] Payment History fetch error:`, error.message);
@@ -1176,7 +1123,6 @@ async function getProctorDetails(authData, session, sessionId) {
       console.log(`[${sessionId}] Cache hit: proctorDetails`);
       return session.cache.proctorDetails.data;
     }
-
     console.log(`[${sessionId}] Fetching Proctor Details...`);
     const client = getClient(sessionId);
     const baseUrl = getBaseUrl(getCampus(sessionId));
@@ -1188,13 +1134,7 @@ async function getProctorDetails(authData, session, sessionId) {
         authorizedID: authData.authorizedID,
         _csrf: authData.csrfToken
       }),
-      {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Referer': `${baseUrl}/vtop/content`,
-          'X-Requested-With': 'XMLHttpRequest'
-        }
-      }
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': `${baseUrl}/vtop/content`, 'X-Requested-With': 'XMLHttpRequest' } }
     );
     
     const $ = cheerio.load(res.data);
@@ -1215,10 +1155,7 @@ async function getProctorDetails(authData, session, sessionId) {
     
     if (session) {
       session.cache.proctorDetails = { data: proctorDetails, timestamp: Date.now() };
-      console.log(`[${sessionId}] Cache set: proctorDetails`);
     }
-    
-    console.log(`[${sessionId}] Proctor Details fetched for ${authData.authorizedID}`);
     return proctorDetails;
   } catch (error) {
     console.error(`[${sessionId}] Proctor Details fetch error:`, error.message);
@@ -1229,10 +1166,8 @@ async function getProctorDetails(authData, session, sessionId) {
 async function getGradeHistory(authData, session, sessionId) {
   try {
     if (isCacheValid(session, 'gradeHistory')) {
-      console.log(`[${sessionId}] Cache hit: gradeHistory`);
       return session.cache.gradeHistory.data;
     }
-
     console.log(`[${sessionId}] Fetching Grade History...`);
     const client = getClient(sessionId);
     const baseUrl = getBaseUrl(getCampus(sessionId));
@@ -1244,13 +1179,7 @@ async function getGradeHistory(authData, session, sessionId) {
         authorizedID: authData.authorizedID,
         _csrf: authData.csrfToken
       }),
-      {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Referer': `${baseUrl}/vtop/content`,
-          'X-Requested-With': 'XMLHttpRequest'
-        }
-      }
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': `${baseUrl}/vtop/content`, 'X-Requested-With': 'XMLHttpRequest' } }
     );
     
     const $ = cheerio.load(res.data);
@@ -1333,10 +1262,8 @@ async function getGradeHistory(authData, session, sessionId) {
     
     if (session) {
       session.cache.gradeHistory = { data: gradeHistoryData, timestamp: Date.now() };
-      console.log(`[${sessionId}] Cache set: gradeHistory`);
     }
     
-    console.log(`[${sessionId}] Grade History fetched for ${authData.authorizedID}`);
     return gradeHistoryData;
   } catch (error) {
     console.error(`[${sessionId}] Grade History fetch error:`, error.message);
@@ -1350,7 +1277,6 @@ async function getCounsellingRank(authData, session, sessionId) {
       console.log(`[${sessionId}] Cache hit: counsellingRank`);
       return session.cache.counsellingRank.data;
     }
-
     console.log(`[${sessionId}] Fetching Counselling Rank...`);
     const client = getClient(sessionId);
     const baseUrl = getBaseUrl(getCampus(sessionId));
@@ -1362,13 +1288,7 @@ async function getCounsellingRank(authData, session, sessionId) {
         authorizedID: authData.authorizedID,
         _csrf: authData.csrfToken
       }),
-      {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Referer': `${baseUrl}/vtop/content`,
-          'X-Requested-With': 'XMLHttpRequest'
-        }
-      }
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': `${baseUrl}/vtop/content`, 'X-Requested-With': 'XMLHttpRequest' } }
     );
     
     const $ = cheerio.load(res.data);
@@ -1385,10 +1305,7 @@ async function getCounsellingRank(authData, session, sessionId) {
     
     if (session) {
       session.cache.counsellingRank = { data: details, timestamp: Date.now() };
-      console.log(`[${sessionId}] Cache set: counsellingRank`);
     }
-    
-    console.log(`[${sessionId}] Counselling Rank fetched for ${authData.authorizedID}`);
     return details;
   } catch (error) {
     console.error(`[${sessionId}] Counselling Rank fetch error:`, error.message);
@@ -1413,18 +1330,11 @@ async function getFacultyInfo(authData, session, sessionId, facultyName) {
         authorizedID: authData.authorizedID,
         _csrf: authData.csrfToken
       }),
-      {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Referer': `${baseUrl}/vtop/content`,
-          'X-Requested-With': 'XMLHttpRequest'
-        }
-      }
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': `${baseUrl}/vtop/content`, 'X-Requested-With': 'XMLHttpRequest' } }
     );
     
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // OPTIMIZATION: Removed sleep(500)
     
-    console.log(`[${sessionId}] Searching with query: ${facultyName.toLowerCase()}`);
     const searchRes = await client.post(
       `${baseUrl}/vtop/hrms/EmployeeSearchForStudent`,
       new URLSearchParams({
@@ -1433,52 +1343,33 @@ async function getFacultyInfo(authData, session, sessionId, facultyName) {
         x: new Date().toUTCString(),
         empId: facultyName.toLowerCase()
       }),
-      {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Referer': `${baseUrl}/vtop/hrms/employeeSearchForStudent`,
-          'X-Requested-With': 'XMLHttpRequest'
-        }
-      }
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': `${baseUrl}/vtop/hrms/employeeSearchForStudent`, 'X-Requested-With': 'XMLHttpRequest' } }
     );
     
     const $search = cheerio.load(searchRes.data);
     const faculties = [];
-    
+
     $search('table tbody tr').each((i, row) => {
-      if (i === 0) return;
-      
-      const cells = $search(row).find('td');
-      if (cells.length >= 4) {
-        const name = $search(cells[0]).text().trim();
-        const designation = $search(cells[1]).text().trim();
-        const school = $search(cells[2]).text().trim();
-        const button = $search(cells[3]).find('button');
-        const empId = button.attr('id') || button.attr('onclick')?.match(/getEmployeeIdNo\(["']([^"']+)["']\)/)?.[1];
-        
-        if (name && empId) {
-          faculties.push({ name, designation, school, empId });
+        if (i === 0) return;
+        const cells = $search(row).find('td');
+        if (cells.length >= 4) {
+          const name = $search(cells[0]).text().trim();
+          const designation = $search(cells[1]).text().trim();
+          const school = $search(cells[2]).text().trim();
+          const button = $search(cells[3]).find('button');
+          const empId = button.attr('id') || button.attr('onclick')?.match(/getEmployeeIdNo\(["']([^"']+)["']\)/)?.[1];
+          if (name && empId) {
+            faculties.push({ name, designation, school, empId });
+          }
         }
-      }
     });
-    
-    if (faculties.length === 0) {
-      return { 
-        error: `No faculty found matching "${facultyName}". Please check the spelling and try again.`, 
-        faculties: [] 
-      };
-    }
-    
-    if (faculties.length > 1) {
-      return { 
-        faculties, 
-        requiresSelection: true,
-        message: `Found ${faculties.length} faculty members. Please specify which one you'd like to know about.`
-      };
-    }
-    
+
+    if (faculties.length === 0) return { error: `No faculty found.`, faculties: [] };
+    if (faculties.length > 1) return { faculties, requiresSelection: true, message: `Found ${faculties.length} faculty members.` };
+
     const selectedFaculty = faculties[0];
-    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // OPTIMIZATION: Removed sleep(500)
     
     const detailsRes = await client.post(
       `${baseUrl}/vtop/hrms/EmployeeSearch1ForStudent`,
@@ -1488,353 +1379,36 @@ async function getFacultyInfo(authData, session, sessionId, facultyName) {
         x: new Date().toUTCString(),
         empId: selectedFaculty.empId
       }),
-      {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Referer': `${baseUrl}/vtop/hrms/employeeSearchForStudent`,
-          'X-Requested-With': 'XMLHttpRequest'
-        }
-      }
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': `${baseUrl}/vtop/hrms/employeeSearchForStudent`, 'X-Requested-With': 'XMLHttpRequest' } }
     );
-    
     const $ = cheerio.load(detailsRes.data);
     const details = {};
-    
     $('table.table-bordered').first().find('tbody tr').each((i, row) => {
-      const cells = $(row).find('td');
-      if (cells.length >= 2) {
-        const label = $(cells[0]).find('b').text().trim();
-        const value = $(cells[1]).text().trim();
-        
-        if (label && value && !label.includes('Image')) {
-          details[label] = value;
+        const cells = $(row).find('td');
+        if (cells.length >= 2) {
+          const label = $(cells[0]).find('b').text().trim();
+          const value = $(cells[1]).text().trim();
+          if (label && value && !label.includes('Image')) {
+            details[label] = value;
+          }
         }
-      }
     });
     
     const openHours = [];
     $('table.table-bordered').last().find('tbody tr').each((i, row) => {
-      const cells = $(row).find('td');
-      if (cells.length >= 2) {
-        const day = $(cells[0]).text().trim();
-        const timing = $(cells[1]).text().trim();
-        if (day && timing && day !== 'Week Day') {
-          openHours.push({ day, timing });
+        const cells = $(row).find('td');
+        if (cells.length >= 2) {
+          const day = $(cells[0]).text().trim();
+          const timing = $(cells[1]).text().trim();
+          if (day && timing && day !== 'Week Day') {
+            openHours.push({ day, timing });
+          }
         }
-      }
     });
     
-    const facultyData = {
-      name: selectedFaculty.name,
-      designation: selectedFaculty.designation,
-      school: selectedFaculty.school,
-      empId: selectedFaculty.empId,
-      details,
-      openHours
-    };
-    
-    return facultyData;
+    return { name: selectedFaculty.name, designation: selectedFaculty.designation, school: selectedFaculty.school, empId: selectedFaculty.empId, details, openHours };
   } catch (error) {
     console.error(`[${sessionId}] Faculty Info fetch error:`, error.message);
-    throw error;
-  }
-}
-
-async function getAcademicCalendar(authData, session, sessionId, semesterId = null) {
-  try {
-    if (isCacheValid(session, 'academicCalendar')) {
-      console.log(`[${sessionId}] Cache hit: academicCalendar`);
-      return session.cache.academicCalendar.data;
-    }
-
-    console.log(`[${sessionId}] Fetching Academic Calendar...`);
-    const client = getClient(sessionId);
-    const campus = getCampus(sessionId);
-    const baseUrl = getBaseUrl(campus);
-    
-    // FIX: Dynamic Semester ID
-    // FIX: Dynamic Semester ID
-const currentSemId = semesterId || (campus === 'chennai' ? 'CH20252605' : 'VL20252605');
-    
-    await client.post(
-      `${baseUrl}/vtop/academics/common/CalendarPreview`,
-      new URLSearchParams({
-        verifyMenu: 'true',
-        authorizedID: authData.authorizedID,
-        _csrf: authData.csrfToken
-      }),
-      {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Referer': `${baseUrl}/vtop/content`,
-          'X-Requested-With': 'XMLHttpRequest'
-        }
-      }
-    );
-    
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    await client.post(
-      `${baseUrl}/vtop/getDateForSemesterPreview`,
-      new URLSearchParams({
-        _csrf: authData.csrfToken,
-        paramReturnId: 'getDateForSemesterPreview',
-        semSubId: currentSemId,
-        authorizedID: authData.authorizedID
-      }),
-      {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Referer': `${baseUrl}/vtop/academics/common/CalendarPreview`,
-          'X-Requested-With': 'XMLHttpRequest'
-        }
-      }
-    );
-    
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    await client.post(
-      `${baseUrl}/vtop/getListForSemester`,
-      new URLSearchParams({
-        _csrf: authData.csrfToken,
-        paramReturnId: 'getListForSemester',
-        semSubId: currentSemId,
-        classGroupId: 'ALL',
-        authorizedID: authData.authorizedID
-      }),
-      {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Referer': `${baseUrl}/vtop/academics/common/CalendarPreview`,
-          'X-Requested-With': 'XMLHttpRequest'
-        }
-      }
-    );
-    
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    const months = [
-      { name: 'DECEMBER', date: '01-DEC-2025', classGroup: 'ALL' },
-      { name: 'JANUARY', date: '01-JAN-2026', classGroup: 'ALL' },
-      { name: 'FEBRUARY', date: '01-FEB-2026', classGroup: 'ALL' },
-      { name: 'MARCH', date: '01-MAR-2026', classGroup: 'ALL' },
-      { name: 'APRIL', date: '01-APR-2026', classGroup: 'ALL' }
-    ];
-    
-    const calendar = {};
-    
-    for (const month of months) {
-      try {
-        console.log(`[${sessionId}] Fetching ${month.name}...`);
-        
-        const res = await client.post(
-          `${baseUrl}/vtop/processViewCalendar`,
-          new URLSearchParams({
-            _csrf: authData.csrfToken,
-            calDate: month.date,
-            semSubId: currentSemId,
-            classGroupId: month.classGroup,
-            authorizedID: authData.authorizedID
-          }),
-          {
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-              'Referer': `${baseUrl}/vtop/academics/common/CalendarPreview`,
-              'X-Requested-With': 'XMLHttpRequest'
-            }
-          }
-        );
-        
-        const $ = cheerio.load(res.data);
-        const events = [];
-        
-        $('table.calendar-table tbody tr').each((i, row) => {
-          if ($(row).find('th').length > 0) return;
-          
-          $(row).find('td').each((j, cell) => {
-            const daySpan = $(cell).find('span').first();
-            const day = daySpan.text().trim();
-            
-            if (!day || isNaN(parseInt(day))) return;
-            
-            const greenSpans = $(cell).find('span[style*="color: green"], span[style*="color:green"]');
-            
-            if (greenSpans.length > 0) {
-              greenSpans.each((k, eventSpan) => {
-                const eventText = $(eventSpan).text().trim();
-                const nextSpan = $(eventSpan).next('span[style*="color"]');
-                const eventNote = nextSpan.text().trim();
-                
-                if (eventText) {
-                  events.push({
-                    day: parseInt(day),
-                    event: eventText,
-                    note: eventNote || ''
-                  });
-                }
-              });
-            }
-            
-            const otherSpans = $(cell).find('span[style*="color"]').not('[style*="color: green"]').not('[style*="color:green"]').not('[style*="color: #000"]').not('[style*="color:#000"]');
-            
-            if (otherSpans.length > 0) {
-              otherSpans.each((k, eventSpan) => {
-                const eventText = $(eventSpan).text().trim();
-                
-                if (eventText === day || !eventText) return;
-                
-                const alreadyExists = events.some(e => e.day === parseInt(day) && e.event === eventText);
-                
-                if (!alreadyExists && eventText.length > 3) {
-                  events.push({
-                    day: parseInt(day),
-                    event: eventText,
-                    note: ''
-                  });
-                }
-              });
-            }
-          });
-        });
-        
-        events.sort((a, b) => a.day - b.day);
-        calendar[month.name] = events;
-        await new Promise(resolve => setTimeout(resolve, 300));
-        
-      } catch (error) {
-        console.log(`[${sessionId}] Could not fetch ${month.name} calendar: ${error.message}`);
-        calendar[month.name] = [];
-      }
-    }
-    
-    let totalInstructionalDays = 0;
-    let totalNonInstructionalDays = 0;
-    let totalHolidays = 0;
-    let totalExams = 0;
-    let totalEvents = 0;
-    
-    for (const events of Object.values(calendar)) {
-      totalEvents += events.length;
-      
-      events.forEach(event => {
-        const eventLower = event.event.toLowerCase();
-        
-        if (eventLower.includes('instructional')) {
-          totalInstructionalDays++;
-        } else if (eventLower.includes('holiday') || eventLower.includes('festival')) {
-          totalHolidays++;
-        } else if (eventLower.includes('exam') || eventLower.includes('cat') || eventLower.includes('fat')) {
-          totalExams++;
-        } else if (eventLower.includes('non-instructional') || eventLower.includes('no class') || 
-                   eventLower.includes('vacation') || eventLower.includes('break')) {
-          totalNonInstructionalDays++;
-        }
-      });
-    }
-    
-    const calendarData = {
-      calendar,
-      summary: {
-        totalEvents,
-        totalInstructionalDays,
-        totalNonInstructionalDays,
-        totalHolidays,
-        totalExams,
-        monthsCovered: months.length
-      }
-    };
-    
-    if (session) {
-      session.cache.academicCalendar = { data: calendarData, timestamp: Date.now() };
-      console.log(`[${sessionId}] Cache set: academicCalendar`);
-    }
-    
-    console.log(`[${sessionId}] Academic Calendar fetched for ${authData.authorizedID}`);
-    return calendarData;
-  } catch (error) {
-    console.error(`[${sessionId}] Academic Calendar fetch error:`, error.message);
-    throw error;
-  }
-}
-
-async function getLeaveStatus(authData, session, sessionId) {
-  try {
-    if (isCacheValid(session, 'leaveStatus')) {
-      console.log(`[${sessionId}] Cache hit: leaveStatus`);
-      return session.cache.leaveStatus.data;
-    }
-
-    console.log(`[${sessionId}] Fetching Leave Status...`);
-    const client = getClient(sessionId);
-    const baseUrl = getBaseUrl(getCampus(sessionId));
-    
-    await client.post(
-      `${baseUrl}/vtop/hostels/student/leave/1`,
-      new URLSearchParams({
-        verifyMenu: 'true',
-        authorizedID: authData.authorizedID,
-        _csrf: authData.csrfToken
-      }),
-      {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Referer': `${baseUrl}/vtop/content`,
-          'X-Requested-With': 'XMLHttpRequest'
-        }
-      }
-    );
-    
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    const res = await client.post(
-      `${baseUrl}/vtop/hostels/student/leave/4`,
-      new URLSearchParams({
-        _csrf: authData.csrfToken,
-        authorizedID: authData.authorizedID,
-        status: '',
-        form: 'undefined',
-        control: 'status'
-      }),
-      {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Referer': `${baseUrl}/vtop/hostels/student/leave/1`,
-          'X-Requested-With': 'XMLHttpRequest'
-        }
-      }
-    );
-    
-    const $ = cheerio.load(res.data);
-    const leaveStatus = [];
-    
-    $('#LeaveAppliedTable tbody tr').each((i, row) => {
-      const cells = $(row).find('td');
-      if (cells.length >= 8) {
-        const leave = {
-          slNo: $(cells[0]).text().trim(),
-          place: $(cells[2]).text().trim(),
-          reason: $(cells[3]).text().trim(),
-          type: $(cells[4]).text().trim(),
-          from: $(cells[5]).text().trim(),
-          to: $(cells[6]).text().trim(),
-          status: $(cells[7]).text().trim()
-        };
-        
-        if (leave.place) {
-          leaveStatus.push(leave);
-        }
-      }
-    });
-    
-    if (session) {
-      session.cache.leaveStatus = { data: leaveStatus, timestamp: Date.now() };
-      console.log(`[${sessionId}] Cache set: leaveStatus`);
-    }
-    
-    console.log(`[${sessionId}] Leave Status fetched for ${authData.authorizedID}`);
-    return leaveStatus;
-  } catch (error) {
-    console.error(`[${sessionId}] Leave Status fetch error:`, error.message);
     throw error;
   }
 }
@@ -1853,48 +1427,35 @@ async function getFacultyDetailsByEmpId(authData, session, sessionId, empId) {
         x: new Date().toUTCString(),
         empId: empId
       }),
-      {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Referer': `${baseUrl}/vtop/hrms/employeeSearchForStudent`,
-          'X-Requested-With': 'XMLHttpRequest'
-        }
-      }
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': `${baseUrl}/vtop/hrms/employeeSearchForStudent`, 'X-Requested-With': 'XMLHttpRequest' } }
     );
     
     const $ = cheerio.load(detailsRes.data);
     const details = {};
-    
     $('table.table-bordered').first().find('tbody tr').each((i, row) => {
-      const cells = $(row).find('td');
-      if (cells.length >= 2) {
-        const label = $(cells[0]).find('b').text().trim();
-        const value = $(cells[1]).text().trim();
-        
-        if (label && value && !label.includes('Image')) {
-          details[label] = value;
+        const cells = $(row).find('td');
+        if (cells.length >= 2) {
+          const label = $(cells[0]).find('b').text().trim();
+          const value = $(cells[1]).text().trim();
+          if (label && value && !label.includes('Image')) {
+            details[label] = value;
+          }
         }
-      }
     });
     
     const openHours = [];
     $('table.table-bordered').last().find('tbody tr').each((i, row) => {
-      const cells = $(row).find('td');
-      if (cells.length >= 2) {
-        const day = $(cells[0]).text().trim();
-        const timing = $(cells[1]).text().trim();
-        if (day && timing && day !== 'Week Day') {
-          openHours.push({ day, timing });
+        const cells = $(row).find('td');
+        if (cells.length >= 2) {
+          const day = $(cells[0]).text().trim();
+          const timing = $(cells[1]).text().trim();
+          if (day && timing && day !== 'Week Day') {
+            openHours.push({ day, timing });
+          }
         }
-      }
     });
     
-    const facultyData = {
-      details,
-      openHours
-    };
-    
-    return facultyData;
+    return { details, openHours };
   } catch (error) {
     console.error(`[${sessionId}] Faculty Details fetch error:`, error.message);
     throw error;
@@ -1929,6 +1490,225 @@ async function downloadGradeHistory(authData, session, sessionId) {
     return res.data;
   } catch (error) {
     console.error(`[${sessionId}] Grade History download error:`, error.message);
+    throw error;
+  }
+}
+
+async function getAcademicCalendar(authData, session, sessionId, semesterId = null) {
+  try {
+    if (isCacheValid(session, 'academicCalendar')) {
+      console.log(`[${sessionId}] Cache hit: academicCalendar`);
+      return session.cache.academicCalendar.data;
+    }
+
+    console.log(`[${sessionId}] Fetching Academic Calendar...`);
+    const client = getClient(sessionId);
+    const campus = getCampus(sessionId);
+    const baseUrl = getBaseUrl(campus);
+    const currentSemId = semesterId || (campus === 'chennai' ? 'CH20252605' : 'VL20252605');
+
+    await client.post(
+      `${baseUrl}/vtop/academics/common/CalendarPreview`,
+      new URLSearchParams({
+        verifyMenu: 'true',
+        authorizedID: authData.authorizedID,
+        _csrf: authData.csrfToken
+      }),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': `${baseUrl}/vtop/content`, 'X-Requested-With': 'XMLHttpRequest' } }
+    );
+    
+    // OPTIMIZATION: Removed sleep(500)
+    
+    await client.post(
+        `${baseUrl}/vtop/getDateForSemesterPreview`,
+        new URLSearchParams({ _csrf: authData.csrfToken, paramReturnId: 'getDateForSemesterPreview', semSubId: currentSemId, authorizedID: authData.authorizedID }),
+        { headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': `${baseUrl}/vtop/academics/common/CalendarPreview`, 'X-Requested-With': 'XMLHttpRequest' } }
+    );
+    
+    // OPTIMIZATION: Removed sleep(500)
+    
+    await client.post(
+        `${baseUrl}/vtop/getListForSemester`,
+        new URLSearchParams({ _csrf: authData.csrfToken, paramReturnId: 'getListForSemester', semSubId: currentSemId, classGroupId: 'ALL', authorizedID: authData.authorizedID }),
+        { headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': `${baseUrl}/vtop/academics/common/CalendarPreview`, 'X-Requested-With': 'XMLHttpRequest' } }
+    );
+    
+    // OPTIMIZATION: Removed sleep(500)
+    
+    const months = [
+      { name: 'DECEMBER', date: '01-DEC-2025', classGroup: 'ALL' },
+      { name: 'JANUARY', date: '01-JAN-2026', classGroup: 'ALL' },
+      { name: 'FEBRUARY', date: '01-FEB-2026', classGroup: 'ALL' },
+      { name: 'MARCH', date: '01-MAR-2026', classGroup: 'ALL' },
+      { name: 'APRIL', date: '01-APR-2026', classGroup: 'ALL' }
+    ];
+    
+    const calendar = {};
+    
+    // OPTIMIZATION: Fetch all months in PARALLEL via Promise.all
+    console.log(`[${sessionId}] Fetching ${months.length} months of calendar data concurrently...`);
+    
+    await Promise.all(months.map(async (month) => {
+      try {
+        const res = await client.post(
+          `${baseUrl}/vtop/processViewCalendar`,
+          new URLSearchParams({
+            _csrf: authData.csrfToken,
+            calDate: month.date,
+            semSubId: currentSemId,
+            classGroupId: month.classGroup,
+            authorizedID: authData.authorizedID
+          }),
+          {
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'Referer': `${baseUrl}/vtop/academics/common/CalendarPreview`,
+              'X-Requested-With': 'XMLHttpRequest'
+            }
+          }
+        );
+        
+        const $ = cheerio.load(res.data);
+        const events = [];
+        
+        $('table.calendar-table tbody tr').each((i, row) => {
+          if ($(row).find('th').length > 0) return;
+          $(row).find('td').each((j, cell) => {
+            const daySpan = $(cell).find('span').first();
+            const day = daySpan.text().trim();
+            if (!day || isNaN(parseInt(day))) return;
+            
+            const greenSpans = $(cell).find('span[style*="color: green"], span[style*="color:green"]');
+            if (greenSpans.length > 0) {
+              greenSpans.each((k, eventSpan) => {
+                const eventText = $(eventSpan).text().trim();
+                const nextSpan = $(eventSpan).next('span[style*="color"]');
+                const eventNote = nextSpan.text().trim();
+                if (eventText) {
+                  events.push({ day: parseInt(day), event: eventText, note: eventNote || '' });
+                }
+              });
+            }
+            const otherSpans = $(cell).find('span[style*="color"]').not('[style*="color: green"]').not('[style*="color:green"]').not('[style*="color: #000"]').not('[style*="color:#000"]');
+            if (otherSpans.length > 0) {
+              otherSpans.each((k, eventSpan) => {
+                const eventText = $(eventSpan).text().trim();
+                if (eventText === day || !eventText) return;
+                const alreadyExists = events.some(e => e.day === parseInt(day) && e.event === eventText);
+                if (!alreadyExists && eventText.length > 3) {
+                  events.push({ day: parseInt(day), event: eventText, note: '' });
+                }
+              });
+            }
+          });
+        });
+        
+        events.sort((a, b) => a.day - b.day);
+        calendar[month.name] = events;
+      } catch (error) {
+        console.log(`[${sessionId}] Could not fetch ${month.name} calendar: ${error.message}`);
+        calendar[month.name] = [];
+      }
+    }));
+    
+    let totalInstructionalDays = 0;
+    let totalNonInstructionalDays = 0;
+    let totalHolidays = 0;
+    let totalExams = 0;
+    let totalEvents = 0;
+    
+    for (const events of Object.values(calendar)) {
+      totalEvents += events.length;
+      events.forEach(event => {
+        const eventLower = event.event.toLowerCase();
+        if (eventLower.includes('instructional')) {
+          totalInstructionalDays++;
+        } else if (eventLower.includes('holiday') || eventLower.includes('festival')) {
+          totalHolidays++;
+        } else if (eventLower.includes('exam') || eventLower.includes('cat') || eventLower.includes('fat')) {
+          totalExams++;
+        } else if (eventLower.includes('non-instructional') || eventLower.includes('no class') || 
+                   eventLower.includes('vacation') || eventLower.includes('break')) {
+          totalNonInstructionalDays++;
+        }
+      });
+    }
+
+    const calendarData = {
+      calendar,
+      summary: { totalEvents, totalInstructionalDays, totalNonInstructionalDays, totalHolidays, totalExams, monthsCovered: months.length }
+    };
+    
+    if (session) {
+      session.cache.academicCalendar = { data: calendarData, timestamp: Date.now() };
+    }
+    
+    return calendarData;
+  } catch (error) {
+    console.error(`[${sessionId}] Academic Calendar fetch error:`, error.message);
+    throw error;
+  }
+}
+
+async function getLeaveStatus(authData, session, sessionId) {
+  try {
+    if (isCacheValid(session, 'leaveStatus')) {
+      return session.cache.leaveStatus.data;
+    }
+
+    console.log(`[${sessionId}] Fetching Leave Status...`);
+    const client = getClient(sessionId);
+    const baseUrl = getBaseUrl(getCampus(sessionId));
+    
+    await client.post(
+      `${baseUrl}/vtop/hostels/student/leave/1`,
+      new URLSearchParams({
+        verifyMenu: 'true',
+        authorizedID: authData.authorizedID,
+        _csrf: authData.csrfToken
+      }),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': `${baseUrl}/vtop/content`, 'X-Requested-With': 'XMLHttpRequest' } }
+    );
+    
+    // OPTIMIZATION: Removed sleep(500)
+    
+    const res = await client.post(
+      `${baseUrl}/vtop/hostels/student/leave/4`,
+      new URLSearchParams({
+        _csrf: authData.csrfToken,
+        authorizedID: authData.authorizedID,
+        status: '',
+        form: 'undefined',
+        control: 'status'
+      }),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': `${baseUrl}/vtop/hostels/student/leave/1`, 'X-Requested-With': 'XMLHttpRequest' } }
+    );
+    
+    const $ = cheerio.load(res.data);
+    const leaveStatus = [];
+    
+    $('#LeaveAppliedTable tbody tr').each((i, row) => {
+      const cells = $(row).find('td');
+      if (cells.length >= 8) {
+        const leave = {
+          slNo: $(cells[0]).text().trim(),
+          place: $(cells[2]).text().trim(),
+          reason: $(cells[3]).text().trim(),
+          type: $(cells[4]).text().trim(),
+          from: $(cells[5]).text().trim(),
+          to: $(cells[6]).text().trim(),
+          status: $(cells[7]).text().trim()
+        };
+        if (leave.place) leaveStatus.push(leave);
+      }
+    });
+
+    if (session) {
+        session.cache.leaveStatus = { data: leaveStatus, timestamp: Date.now() };
+    }
+    return leaveStatus;
+  } catch (error) {
+    console.error(`[${sessionId}] Leave Status fetch error:`, error.message);
     throw error;
   }
 }
