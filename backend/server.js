@@ -308,9 +308,15 @@ async function generateStreamingResponse(prompt, session, res, retryCount = 0) {
   
   const { key, model: modelName } = config;
   const genAI = new GoogleGenerativeAI(key);
+  
+  // Inject today's date into system instruction
+  const now = new Date();
+  const dateStr = now.toLocaleDateString("en-US", { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const dynamicSystemInstruction = `${VTOP_SYSTEM_INSTRUCTION}\n\nToday is ${dateStr}. Use this for calendar, timetable, and relative time queries.`;
+
   const model = genAI.getGenerativeModel({ 
     model: modelName,
-    systemInstruction: VTOP_SYSTEM_INSTRUCTION
+    systemInstruction: dynamicSystemInstruction
   });
   
   const recentHistory = session.conversationHistory.map(msg => ({
@@ -786,7 +792,9 @@ app.post('/api/chat', async (req, res) => {
         - Shows "X days left" if upcoming
         
         
-        Use emojis and markdown formatting for emphasis on urgent items.
+        Use markdown formatting
+        IMP: If user is asking for particular subject assignment deadline then show only that subject assignmnt deadline not all subjects.
+        and if user is asking for particular subject like IoT or DS etc then show only that subject assignment deadline not all subjects.
       `;
       break;
 
@@ -872,7 +880,11 @@ app.post('/api/chat', async (req, res) => {
         - 🏢 for venues
         
         Use markdown formatting for clarity.
-        Also if there is lab sessions include them appropriately like slot L35+L36 is one column not separately
+        Also if there is lab sessions include them appropriately like slot L35+L36 is one column not separately.
+        
+        IMP: If user is asking for particular subject timetable then show only that subject schedule not all subjects.
+        and if user is asking for specific day (e.g. "Monday", "Today", "Tomorrow") then show ONLY that day's schedule.
+        and if user is asking for "next class", find the immediate next class based on current time and show only that.
       `;
       break;
 
