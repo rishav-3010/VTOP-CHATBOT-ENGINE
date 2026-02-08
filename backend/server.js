@@ -3,6 +3,8 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const { loginToVTOP, getAuthData } = require('./vtop-auth');
 const {
   getCGPA,
@@ -30,11 +32,56 @@ const { initDB, logUserLogin } = require('./db');
 
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
+
+// Security middleware
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://unpkg.com", "https://cdn.jsdelivr.net", "https://cdn.tailwindcss.com"],
+            styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+            fontSrc: ["'self'", "https://fonts.gstatic.com"],
+            imgSrc: ["'self'", "data:", "https:"],
+            connectSrc: ["'self'"],
+            frameAncestors: ["'none'"],
+            upgradeInsecureRequests: []
+        }
+    },
+    crossOriginEmbedderPolicy: false
+}));
+
+// Rate limiting for API endpoints
+const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // limit each IP to 100 requests per windowMs
+    message: 'Too many requests from this IP, please try again later.',
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+const chatLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000, // 1 minute
+    max: 20, // limit each IP to 20 chat messages per minute
+    message: 'Too many chat messages, please slow down.',
+    standardHeaders: true,
+    legacyHeaders: false,
+});
 
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Apply rate limiting to API routes
+app.use('/api/', apiLimiter);
+
+// Input sanitization helper
+const sanitizeInput = (input) => {
+    if (typeof input !== 'string') return '';
+    // Remove HTML tags and trim
+    return input.replace(/<[^>]*>/g, '').trim().substring(0, 5000);
+};
 
 const demoUsername = process.env.VTOP_USERNAME;
 const demoPassword = process.env.VTOP_PASSWORD;
@@ -480,8 +527,23 @@ app.post('/api/login', async (req, res) => {
   }
 });
 // ===== CHAT ENDPOINT WITH STREAMING =====
-app.post('/api/chat', async (req, res) => {
-  const { message, sessionId } = req.body;
+app.post('/api/chat', chatLimiter, async (req, res) => {
+  // Input validation and sanitization
+  if (!req.body.message || typeof req.body.message !== 'string') {
+    return res.status(400).json({ error: 'Invalid message format' });
+  }
+  
+  if (req.body.message.length > 5000) {
+    return res.status(400).json({ error: 'Message too long (max 5000 characters)' });
+  }
+  
+  const message = sanitizeInput(req.body.message);
+  const { sessionId } = req.body;
+  
+  if (!message || message.length === 0) {
+    return res.status(400).json({ error: 'Message cannot be empty' });
+  }
+  
   try {  
     const session = getSession(sessionId);
     
@@ -1254,7 +1316,12 @@ app.post('/api/faculty/select', async (req, res) => {
 app.post('/api/papers/search/github', async (req, res) => {
   console.log('\n📘 GitHub Papers Search:');
   try {
-    const { courseCode, courseName, paperType } = req.body;
+    let { courseCode, courseName, paperType } = req.body;
+    
+    // Sanitize inputs
+    courseCode = courseCode ? sanitizeInput(courseCode) : '';
+    courseName = courseName ? sanitizeInput(courseName) : '';
+    paperType = paperType ? sanitizeInput(paperType) : '';
     
     if (!courseCode && !courseName) {
       return res.status(400).json({ success: false, error: { message: 'Please provide course code or name' } });
@@ -1294,7 +1361,12 @@ app.post('/api/papers/search/github', async (req, res) => {
 app.post('/api/papers/search/codechef', async (req, res) => {
   console.log('\n🍴 CodeChef Papers Search:');
   try {
-    const { courseCode, courseName, paperType } = req.body;
+    let { courseCode, courseName, paperType } = req.body;
+    
+    // Sanitize inputs
+    courseCode = courseCode ? sanitizeInput(courseCode) : '';
+    courseName = courseName ? sanitizeInput(courseName) : '';
+    paperType = paperType ? sanitizeInput(paperType) : '';
     
     if (!courseCode && !courseName) {
       return res.status(400).json({ success: false, error: { message: 'Please provide course code or name' } });
