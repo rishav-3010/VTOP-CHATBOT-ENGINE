@@ -720,7 +720,12 @@ app.post('/api/chat', async (req, res) => {
       }
       if (allData.gradeHistory && intents.includes('getgradehistory')) {
         dataContext += `\nGrade History: ${JSON.stringify(allData.gradeHistory, null, 2)}`;
-        promptSections.push(`For Grade History: Show comprehensive academic report with grade distribution, CGPA, credits, curriculum progress, and recent courses table. At the end, add: 📄 Want the complete official record? [Download Grade History PDF](/api/downloads/grade-history?sessionId=${session.id})`);
+        
+        let gradeHistoryPrompt = `For Grade History: Show comprehensive academic report with grade distribution, CGPA, credits, curriculum progress, and recent courses table.`;
+        if (!session.currentCredentials.isDemo) {
+            gradeHistoryPrompt += ` At the end, add: 📄 Want the complete official record? [Download Grade History PDF](/api/downloads/grade-history?sessionId=${session.id})`;
+        }
+        promptSections.push(gradeHistoryPrompt);
       }
       if (allData.counsellingRank && intents.includes('getcounsellingrank')) {
         dataContext += `\nCounselling Rank: ${JSON.stringify(allData.counsellingRank, null, 2)}`;
@@ -954,6 +959,12 @@ app.post('/api/chat', async (req, res) => {
       break;
 
     case 'getgradehistory':
+      let pdfPart = !session.currentCredentials.isDemo 
+        ? `
+        5. **PDF Download**:
+           At the end, add a friendly line like "📄 Want the complete official record? [Download Grade History PDF](/api/downloads/grade-history?sessionId=${session.id})"`
+        : "";
+
       prompt = `
         The user asked: "${message}"
         Here's their complete grade history: ${JSON.stringify(data, null, 2)}
@@ -974,9 +985,7 @@ app.post('/api/chat', async (req, res) => {
         
         4. **Recent Courses** (last 5-10 courses):
            Table with: Course | Grade | Credits | Exam Month
-        
-        5. **PDF Download**:
-           At the end, add a friendly line like "📄 Want the complete official record? [Download Grade History PDF](/api/downloads/grade-history?sessionId=${session.id})"
+        ${pdfPart}
         
         Use markdown formatting extensively.
       `;
@@ -1079,7 +1088,15 @@ app.post('/api/chat', async (req, res) => {
       `;
       break;
       case 'downloadgradehistory':
-      prompt = `
+      if (session.currentCredentials.isDemo) {
+        prompt = `
+        The user asked: "${message}"
+        User is on a DEMO account.
+        
+        Apologize and inform the user that downloading Grade History PDF is not available in Demo Mode as it requires real authentic access to generate official records.
+        `;
+      } else {
+        prompt = `
         The user asked: "${message}"
         
         Respond by providing a direct link to download their Grade History PDF.
@@ -1088,7 +1105,8 @@ app.post('/api/chat', async (req, res) => {
         [📄 Download Grade History PDF](/api/downloads/grade-history?sessionId=${session.id})
         
         Tell them the file will contain their complete academic performance record.
-      `;
+        `;
+      }
       break;
         default:
           prompt = `The user asked: "${message}"\n\nBased on our conversation, answer their question naturally.`;

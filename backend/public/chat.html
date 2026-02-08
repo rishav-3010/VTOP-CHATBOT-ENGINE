@@ -465,7 +465,10 @@
                     
                     let streamBuffer = "";
                     let displayedText = "";
-                    let isFirstChunk = true;
+                    // Buffer for detecting and parsing the JSON header across chunks
+                    let headerBuffer = ""; 
+                    let isHeaderFound = false;
+                    
                     let receivedData = null;
                     let isStreamComplete = false;
 
@@ -501,25 +504,57 @@
                         }
                     }, 20);
 
+                    const startMarker = '{"type":"DATA"';
+
                     while (true) {
                         const { done, value } = await reader.read();
                         if (done) {
                             isStreamComplete = true;
+                             // Flush any remaining header buffer if we finished without finding a valid header
+                            if (!isHeaderFound && headerBuffer.length > 0) {
+                                streamBuffer += headerBuffer;
+                            }
                             break;
                         }
 
                         const text = decoder.decode(value, { stream: true });
                         
-                        if (isFirstChunk && text.includes('{"type":"DATA"')) {
-                            const lines = text.split('\n\n');
-                            try {
-                                const dataPart = JSON.parse(lines[0]);
-                                receivedData = dataPart.payload;
-                                streamBuffer += lines.slice(1).join('\n\n');
-                            } catch (e) {
-                                streamBuffer += text;
+                        if (!isHeaderFound) {
+                            headerBuffer += text;
+                            
+                            // Check if it's definitely NOT our JSON packet (to avoid buffering normal text forever)
+                            if (headerBuffer.length >= startMarker.length && !headerBuffer.startsWith(startMarker)) {
+                                streamBuffer += headerBuffer;
+                                headerBuffer = ""; // Clear it so we don't re-add it
+                                isHeaderFound = true;
+                                continue;
                             }
-                            isFirstChunk = false;
+
+                            // Check for the delimiter
+                            const delimiterIndex = headerBuffer.indexOf('\n\n');
+                            
+                            if (delimiterIndex !== -1) {
+                                const potentialJson = headerBuffer.substring(0, delimiterIndex);
+                                const remaining = headerBuffer.substring(delimiterIndex + 2);
+                                
+                                if (potentialJson.startsWith(startMarker)) {
+                                    try {
+                                        const dataPart = JSON.parse(potentialJson);
+                                        receivedData = dataPart.payload;
+                                        streamBuffer += remaining;
+                                        isHeaderFound = true;
+                                    } catch (e) {
+                                        // Parsing failed, treat as text
+                                        streamBuffer += headerBuffer;
+                                        isHeaderFound = true;
+                                    }
+                                } else {
+                                    // Found delimiter but wasn't our packet
+                                    streamBuffer += headerBuffer;
+                                    isHeaderFound = true;
+                                }
+                                headerBuffer = ""; // Done with header buffer
+                            }
                         } else {
                             streamBuffer += text;
                         }
