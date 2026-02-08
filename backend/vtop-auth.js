@@ -63,7 +63,7 @@ function destroySession(sessionId) {
 }
 
 async function loginToVTOP(username, password, sessionId, campus = 'vellore') {
-  const MAX_CAPTCHA_ATTEMPTS = 3;
+  const MAX_CAPTCHA_ATTEMPTS = 2;
   const sessionData = getSessionClient(sessionId);
   const { client } = sessionData;
   const baseUrl = getBaseUrl(campus);
@@ -152,7 +152,7 @@ async function loginToVTOP(username, password, sessionId, campus = 'vellore') {
         const vtopError = errorMatch ? errorMatch[1].trim() : '';
 
         // 1. Wrong username
-        if (vtopError.includes('Invalid Credentials')) {
+        if (vtopError.includes('Invalid Credentials') || vtopError.includes('Invalid Username/Password')) {
             return { success: false, error: 'Invalid Credentials' };
         }
 
