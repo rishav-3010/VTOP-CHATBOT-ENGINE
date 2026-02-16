@@ -1,0 +1,628 @@
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Loader2, BookOpen, Eye, EyeOff } from './Icons';
+
+// Papers Interface Component
+const PapersInterface = ({ onBack }) => {
+    const [courseName, setCourseName] = useState('');
+    const [paperType, setPaperType] = useState('all');
+    const [sources, setSources] = useState({ github: true, codechef: true });
+    const [papers, setPapers] = useState([]);
+    const [loadingStates, setLoadingStates] = useState({ github: false, codechef: false });
+    const [sourceResults, setSourceResults] = useState({ github: 0, codechef: 0 });
+    const [errorMessage, setErrorMessage] = useState(null);
+    const [hasSearched, setHasSearched] = useState(false);
+
+    const isAnyLoading = loadingStates.github || loadingStates.codechef;
+
+    const searchSource = async (source, searchParams) => {
+        setLoadingStates(prev => ({ ...prev, [source]: true }));
+        
+        try {
+            const response = await fetch(`/api/papers/search/${source}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(searchParams)
+            });
+            const data = await response.json();
+            
+            if (data.success && data.results) {
+                setPapers(prev => [...prev, ...data.results]);
+                setSourceResults(prev => ({ ...prev, [source]: data.results.length }));
+            } else if (data.error?.type === 'RATE_LIMIT') {
+                setErrorMessage(`GitHub rate limit exceeded. Try again later.`);
+            }
+        } catch (error) {
+            console.error(`Error searching ${source}:`, error);
+        } finally {
+            setLoadingStates(prev => ({ ...prev, [source]: false }));
+        }
+    };
+
+    const handleSearch = async () => {
+        if (!courseName) return;
+        
+        setPapers([]);
+        setSourceResults({ github: 0, codechef: 0 });
+        setErrorMessage(null);
+        setHasSearched(true);
+        
+        const searchParams = { courseName, paperType };
+        
+        if (sources.codechef) {
+            searchSource('codechef', searchParams);
+        }
+        if (sources.github) {
+            searchSource('github', searchParams);
+        }
+    };
+
+    const openPaper = (url) => {
+        window.open(url, '_blank');
+    };
+
+    return (
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+            {/* Header */}
+            <div className="bg-white/80 backdrop-blur-sm border-b border-gray-200 sticky top-0 z-10">
+                <div className="max-w-4xl mx-auto px-4 py-4">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                            <div className="w-10 h-10 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg flex items-center justify-center">
+                                <BookOpen className="w-6 h-6 text-white" />
+                            </div>
+                            <h1 className="text-xl font-bold text-gray-900">Previous Year Papers</h1>
+                        </div>
+                        <button
+                            onClick={onBack}
+                            className="text-sm text-gray-500 hover:text-gray-700 px-3 py-1 rounded-lg border border-gray-300 hover:border-gray-400 transition-colors"
+                        >
+                            Back to Home
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            {/* Search Interface */}
+            <div className="max-w-4xl mx-auto p-4">
+                <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
+                    {/* Source Selection */}
+                    <div className="pb-4 border-b border-gray-200">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Search Sources</label>
+                        <div className="flex space-x-4">
+                            <label className="flex items-center space-x-2 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={sources.github}
+                                    onChange={(e) => setSources({ ...sources, github: e.target.checked })}
+                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                />
+                                <span className="text-sm text-gray-700 font-medium">GitHub Papers</span>
+                                <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">VIT-PYQPs</span>
+                            </label>
+                            <label className="flex items-center space-x-2 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={sources.codechef}
+                                    onChange={(e) => setSources({ ...sources, codechef: e.target.checked })}
+                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                />
+                                <span className="text-sm text-gray-700 font-medium">CodeChef Papers</span>
+                                <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">CodeChef-VIT</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Course Name</label>
+                            <input
+                                type="text"
+                                value={courseName}
+                                onChange={(e) => setCourseName(e.target.value)}
+                                placeholder="e.g. AWS, DSA, DBMS"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Paper Type</label>
+                            <select
+                                value={paperType}
+                                onChange={(e) => setPaperType(e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            >
+                                <option value="all">All Papers</option>
+                                <option value="cat1">CAT 1</option>
+                                <option value="cat2">CAT 2</option>
+                                <option value="fat">FAT</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div className="flex justify-end">
+                        <button
+                            onClick={handleSearch}
+                            disabled={!courseName || isAnyLoading || (!sources.github && !sources.codechef)}
+                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center space-x-2"
+                        >
+                            {isAnyLoading && <Loader2 />}
+                            <span>Search Papers</span>
+                        </button>
+                    </div>
+                </div>
+
+                {/* Loading Status Indicators */}
+                {hasSearched && (loadingStates.github || loadingStates.codechef || papers.length > 0) && (
+                    <div className="mt-4 flex flex-wrap gap-3">
+                        {sources.codechef && (
+                            <div className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm ${
+                                loadingStates.codechef 
+                                    ? 'bg-orange-50 border border-orange-200' 
+                                    : 'bg-green-50 border border-green-200'
+                            }`}>
+                                {loadingStates.codechef ? (
+                                    <>
+                                        <Loader2 />
+                                        <span className="text-orange-700">Searching CodeChef...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <span className="text-green-600">✓</span>
+                                        <span className="text-green-700">CodeChef: {sourceResults.codechef} papers</span>
+                                    </>
+                                )}
+                            </div>
+                        )}
+                        {sources.github && (
+                            <div className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm ${
+                                loadingStates.github 
+                                    ? 'bg-blue-50 border border-blue-200' 
+                                    : 'bg-green-50 border border-green-200'
+                            }`}>
+                                {loadingStates.github ? (
+                                    <>
+                                        <Loader2 />
+                                        <span className="text-blue-700">Searching GitHub... (may take ~1 min)</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <span className="text-green-600">✓</span>
+                                        <span className="text-green-700">GitHub: {sourceResults.github} papers</span>
+                                    </>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Error Message */}
+                {errorMessage && (
+                    <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                        <div className="flex items-center space-x-2 text-red-800">
+                            <span className="font-medium">⚠️ Error</span>
+                        </div>
+                        <p className="mt-1 text-sm text-red-700">{errorMessage}</p>
+                    </div>
+                )}
+
+                {/* Results */}
+                {papers.length > 0 && (
+                    <div className="mt-4 space-y-3">
+                        {papers.map((paper, index) => (
+                            <div
+                                key={index}
+                                className="bg-white rounded-lg shadow-sm p-4 hover:shadow-md transition-shadow"
+                            >
+                                <div className="flex items-center justify-between">
+                                    <div className="flex-1">
+                                        <div className="flex items-center space-x-2 mb-1">
+                                            <h3 className="font-medium text-gray-900">{paper.title}</h3>
+                                            <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                                paper.source === 'CodeChef-VIT' 
+                                                    ? 'bg-orange-100 text-orange-700' 
+                                                    : 'bg-blue-100 text-blue-700'
+                                            }`}>
+                                                {paper.source === 'CodeChef-VIT' ? '🍴 CodeChef' : '📘 GitHub'}
+                                            </span>
+                                        </div>
+                                        <p className="text-sm text-gray-500">
+                                            {paper.courseCode} • {paper.type} • {paper.year}
+                                        </p>
+                                    </div>
+                                    <button
+                                        onClick={() => openPaper(paper.url)}
+                                        className="px-3 py-1 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                    >
+                                        View Paper
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+// Login Form Component
+const LoginForm = ({ onLogin, isLoading, error, setRedirectTarget }) => {
+    const [authMode, setAuthMode] = useState(null);
+    const [credentials, setCredentials] = useState({ username: '', password: '', campus: 'vellore' });
+    const [showPassword, setShowPassword] = useState(false);
+
+    const handleLogin = (e) => {
+        if (e) e.preventDefault();
+        if (authMode === 'demo') {
+            onLogin({ useDemo: true });
+        } else if (authMode === 'custom') {
+            onLogin({ 
+                useDemo: false, 
+                username: credentials.username, 
+                password: credentials.password,
+                campus: credentials.campus
+            });
+        }
+    };
+
+    if (authMode === 'papers') {
+        return <PapersInterface onBack={() => setAuthMode(null)} />;
+    }
+
+    if (!authMode) {
+        return (
+            <div className="min-h-screen bg-slate-50">
+                {/* Header Bar */}
+                <div className="vit-gradient text-white py-3 px-4">
+                    <div className="max-w-4xl mx-auto flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                            <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center">
+                                <span className="text-xl">🎓</span>
+                            </div>
+                            <div>
+                                <h1 className="text-sm font-semibold">VTOP Assistant</h1>
+                                <p className="text-xs text-blue-200">Academic Portal</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Main Content */}
+                <div className="flex items-center justify-center p-6" style={{minHeight: 'calc(100vh - 64px)'}}>
+                    <div className="max-w-lg w-full">
+                        {/* Logo & Title */}
+                        <div className="text-center mb-8">
+                            <div className="w-24 h-24 mx-auto mb-4 bg-gradient-to-br from-vit-blue to-blue-600 rounded-2xl flex items-center justify-center shadow-lg">
+                                <span className="text-5xl">🎓</span>
+                            </div>
+                            <h2 className="text-2xl font-bold text-slate-800">VTOP Assistant</h2>
+                            <p className="text-slate-500 mt-1">AI-powered academic portal access</p>
+                        </div>
+
+                        {/* Options Card */}
+                        <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+                            <div className="p-4 bg-slate-50 border-b border-slate-200">
+                                <h3 className="font-medium text-slate-700">Select an option to continue</h3>
+                            </div>
+                            
+                            <div className="divide-y divide-slate-100">
+                                {/* Demo Mode */}
+                                <button
+                                    onClick={() => { setAuthMode('demo'); setRedirectTarget('chat'); }}
+                                    className="option-card w-full p-4 text-left hover:bg-slate-50 flex items-center justify-between group"
+                                >
+                                    <div className="flex items-center space-x-4">
+                                        <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center">
+                                            <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                        </div>
+                                        <div>
+                                            <h4 className="font-medium text-slate-800">Demo Mode</h4>
+                                            <p className="text-sm text-slate-500">Try with sample student data</p>
+                                        </div>
+                                    </div>
+                                    <svg className="w-5 h-5 text-slate-400 group-hover:text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                    </svg>
+                                </button>
+
+                                {/* VTOP Login */}
+                                <button
+                                    onClick={() => { setAuthMode('custom'); setRedirectTarget('chat'); }}
+                                    className="option-card w-full p-4 text-left hover:bg-slate-50 flex items-center justify-between group"
+                                >
+                                    <div className="flex items-center space-x-4">
+                                        <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                                            <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                            </svg>
+                                        </div>
+                                        <div>
+                                            <h4 className="font-medium text-slate-800">VTOP Chatbot</h4>
+                                            <p className="text-sm text-slate-500">Sign in with your VIT credentials</p>
+                                        </div>
+                                    </div>
+                                    <svg className="w-5 h-5 text-slate-400 group-hover:text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                    </svg>
+                                </button>
+
+                                {/* Data Hub */}
+                                <button
+                                    onClick={() => { setAuthMode('custom'); setRedirectTarget('hub'); }}
+                                    className="option-card w-full p-4 text-left hover:bg-slate-50 flex items-center justify-between group"
+                                >
+                                    <div className="flex items-center space-x-4">
+                                        <div className="w-10 h-10 rounded-lg bg-violet-100 flex items-center justify-center">
+                                            <svg className="w-5 h-5 text-violet-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                            </svg>
+                                        </div>
+                                        <div>
+                                            <h4 className="font-medium text-slate-800">Data Hub</h4>
+                                            <p className="text-sm text-slate-500">Direct data access without AI</p>
+                                        </div>
+                                    </div>
+                                    <svg className="w-5 h-5 text-slate-400 group-hover:text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                    </svg>
+                                </button>
+
+                                {/* Past Papers */}
+                                <button
+                                    onClick={() => setAuthMode('papers')}
+                                    className="option-card w-full p-4 text-left hover:bg-slate-50 flex items-center justify-between group"
+                                >
+                                    <div className="flex items-center space-x-4">
+                                        <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center">
+                                            <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                                            </svg>
+                                        </div>
+                                        <div>
+                                            <h4 className="font-medium text-slate-800">Previous Year Papers</h4>
+                                            <p className="text-sm text-slate-500">Browse past exam papers</p>
+                                        </div>
+                                    </div>
+                                    <span className="text-xs font-medium text-amber-600 bg-amber-50 px-2 py-1 rounded">Free</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="mt-6 text-center">
+                            <p className="text-xs text-slate-400">Unofficial tool · Not affiliated with VIT</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="min-h-screen bg-slate-50">
+            {/* Header Bar */}
+            <div className="vit-gradient text-white py-3 px-4">
+                <div className="max-w-4xl mx-auto flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                        <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center">
+                            <span className="text-xl">🎓</span>
+                        </div>
+                        <div>
+                            <h1 className="text-sm font-semibold">VTOP Assistant</h1>
+                            <p className="text-xs text-blue-200">Academic Portal</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Main Content */}
+            <div className="flex items-center justify-center p-6" style={{minHeight: 'calc(100vh - 64px)'}}>
+                <div className="max-w-md w-full">
+                    <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+                        {/* Form Header */}
+                        <div className="p-4 bg-slate-50 border-b border-slate-200 text-center">
+                            <h2 className="font-semibold text-slate-800">
+                                {authMode === 'demo' ? "Demo Mode" : "Sign In to VTOP"}
+                            </h2>
+                            <p className="text-sm text-slate-500 mt-1">
+                                {authMode === 'demo' ? 
+                                    "Experience with sample student data" :
+                                    "Enter your VIT credentials"}
+                            </p>
+                        </div>
+                    
+                        <form onSubmit={handleLogin} className="p-6 space-y-4">
+                            {authMode === 'custom' ? (
+                                <>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-2">Campus</label>
+                                        <div className="flex space-x-4">
+                                            <label className="flex items-center space-x-2 cursor-pointer">
+                                                <input
+                                                    type="radio"
+                                                    name="campus"
+                                                    value="vellore"
+                                                    checked={credentials.campus === 'vellore'}
+                                                    onChange={(e) => setCredentials(prev => ({ ...prev, campus: e.target.value }))}
+                                                    className="w-4 h-4 text-blue-900 focus:ring-blue-800"
+                                                    disabled={isLoading}
+                                                />
+                                                <span className="text-sm text-slate-700">Vellore</span>
+                                            </label>
+                                            <label className="flex items-center space-x-2 cursor-pointer">
+                                                <input
+                                                    type="radio"
+                                                    name="campus"
+                                                    value="chennai"
+                                                    checked={credentials.campus === 'chennai'}
+                                                    onChange={(e) => setCredentials(prev => ({ ...prev, campus: e.target.value }))}
+                                                    className="w-4 h-4 text-blue-900 focus:ring-blue-800"
+                                                    disabled={isLoading}
+                                                />
+                                                <span className="text-sm text-slate-700">Chennai</span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-2">Username</label>
+                                        <input
+                                            type="text"
+                                            value={credentials.username}
+                                            onChange={(e) => setCredentials(prev => ({ ...prev, username: e.target.value }))}
+                                            className="w-full px-4 py-2.5 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-800 focus:border-transparent text-sm"
+                                            placeholder="Enter your VTOP username"
+                                            required
+                                            disabled={isLoading}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-2">Password</label>
+                                        <div className="relative">
+                                            <input
+                                                type={showPassword ? 'text' : 'password'}
+                                                value={credentials.password}
+                                                onChange={(e) => setCredentials(prev => ({ ...prev, password: e.target.value }))}
+                                                className="w-full px-4 py-2.5 pr-10 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-800 focus:border-transparent text-sm"
+                                                placeholder="Enter your VTOP password"
+                                                required
+                                                disabled={isLoading}
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowPassword(!showPassword)}
+                                                className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600"
+                                                disabled={isLoading}
+                                            >
+                                                {showPassword ? <EyeOff /> : <Eye />}
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="bg-slate-50 border border-slate-200 rounded-md p-3 text-xs text-slate-600">
+                                        <p className="font-medium text-slate-700 mb-1">🔒 Privacy Notice</p>
+                                        <ul className="space-y-0.5 text-slate-500">
+                                            <li>• Credentials are used only for this session to connect to VTOP</li>
+                                            <li>• Passwords are not stored, saved, or logged</li>
+                                            <li>• All session data is cleared when you log out</li>
+                                            <li>• Your academic information is never stored or shared</li>
+                                            <li>• You can use your browser's password manager for convenience</li>
+                                        </ul>
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="bg-emerald-50 border border-emerald-200 rounded-md p-4">
+                                    <div className="flex items-center space-x-2 text-emerald-800">
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        <span className="font-medium">Demo Mode</span>
+                                    </div>
+                                    <p className="text-sm text-emerald-700 mt-1">
+                                        You'll see real VTOP data from a sample student account.
+                                    </p>
+                                </div>
+                            )}
+
+                            {error && (
+                                <div className="bg-red-50 border border-red-200 rounded-md p-3 text-sm text-red-700">
+                                    <div className="flex items-center space-x-2">
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        <span>{error}</span>
+                                    </div>
+                                </div>
+                            )}
+                            
+                            <div className="flex space-x-3 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setAuthMode(null)}
+                                    className="flex-1 py-2.5 px-4 bg-slate-100 text-slate-700 rounded-md hover:bg-slate-200 transition-colors text-sm font-medium disabled:opacity-50"
+                                    disabled={isLoading}
+                                >
+                                    Back
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={isLoading || (authMode === 'custom' && (!credentials.username || !credentials.password))}
+                                    className="flex-1 py-2.5 px-4 vit-gradient text-white rounded-md hover:opacity-90 disabled:bg-slate-400 disabled:cursor-not-allowed transition-all text-sm font-medium flex items-center justify-center space-x-2"
+                                >
+                                    {isLoading && <Loader2 />}
+                                    <span>
+                                        {isLoading ? 'Connecting...' : 
+                                         authMode === 'demo' ? 'Start Demo' : 'Sign In'}
+                                    </span>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                    
+                    {/* Footer */}
+                    <div className="mt-4 text-center">
+                        <p className="text-xs text-slate-400">Unofficial tool · Not affiliated with VIT</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// Main Login Page Component
+const Login = () => {
+    const [isLoading, setIsLoading] = useState(false);
+    const [loginError, setLoginError] = useState(null);
+    const [sessionId, setSessionId] = useState(null);
+    const [redirectTarget, setRedirectTarget] = useState('chat');
+    const navigate = useNavigate();
+
+    // Generate session ID helper
+    const generateSessionId = () => {
+        if (window.crypto && window.crypto.randomUUID) {
+            return window.crypto.randomUUID();
+        }
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        });
+    };
+
+    useEffect(() => {
+        const sid = localStorage.getItem('sessionId') || generateSessionId();
+        localStorage.setItem('sessionId', sid);
+        setSessionId(sid);
+    }, []);
+
+    const handleLogin = async (loginData) => {
+        setIsLoading(true);
+        setLoginError(null);
+
+        try {
+            const response = await fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...loginData, sessionId })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                if (redirectTarget === 'hub') {
+                    navigate('/hub');
+                } else {
+                    navigate('/chat');
+                }
+            } else {
+                setLoginError(result.message || 'Login failed. Please check your credentials.');
+            }
+        } catch (error) {
+            setLoginError('Network error occurred. Please try again.');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    return <LoginForm onLogin={handleLogin} isLoading={isLoading} error={loginError} setRedirectTarget={setRedirectTarget} />;
+};
+
+export default Login;

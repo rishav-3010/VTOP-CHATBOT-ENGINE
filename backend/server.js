@@ -238,7 +238,7 @@ async function recognizeIntent(message, session, retryCount = 0) {
 - getLeaveHistory: Leave history, hostel leaves, leave status
 - getGrades: Semester grades, GPA, course grades
 - getPaymentHistory: Fee payments, receipts, transactions
-- getProctorDetails: Proctor information, faculty advisor
+- getProctorDetails: Proctor information, faculty advisor,proctor's contact,cabin,etc
 - getLeaveStatus: Current leave status, pending/approved leaves
 - getGradeHistory: Complete academic history, grade distribution, curriculum progress
 - getCounsellingRank: Hostel counselling rank, slot, timings
