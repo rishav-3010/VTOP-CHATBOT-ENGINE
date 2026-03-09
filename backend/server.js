@@ -339,6 +339,12 @@ You can help with:
 - 🔍 Search for faculty information and contact details
 - 🔐 View login history and session records
 
+CRITICAL RULE — NEVER HALLUCINATE:
+- If the data provided to you is empty, null, an empty array [], or contains no entries, you MUST clearly tell the user that no data is available for the current semester.
+- Do NOT make up, guess, or fabricate any subjects, marks, attendance figures, timetable slots, exam dates, or any other academic data.
+- Common reason for empty data: the student may be in their final semester (e.g., 8th sem) with no registered courses for the current semester.
+- In such cases, say something like: "It looks like you don't have any registered courses/subjects for this semester. This is common for final-semester students. If you believe this is an error, please check VTOP directly."
+
 Answer warmly and guide them on what you can help with.
 `;
 
@@ -738,7 +744,7 @@ app.post('/api/chat', chatLimiter, async (req, res) => {
       }
       if (allData.attendance && intents.includes('getattendance')) {
         dataContext += `\nAttendance Data: ${JSON.stringify(allData.attendance, null, 2)}`;
-        promptSections.push(`For Attendance: Create a table with columns: Course | Attended/Total | Percentage | 75% Alert | Status. Use 'alertMessage' for alerts and 'alertStatus' for status emojis (🔴 danger, ⚠️ caution, ✅ safe). Add analysis of courses needing attention with specific class counts needed.`);
+        promptSections.push(`For Attendance: Create a table with columns: Course | Attended/Total | Percentage | 75% Alert | Debar Status. Use 'alertMessage' for the 75% Alert column. For the Debar Status column, use the 'debarStatus' field directly from the data (e.g., "Permitted", "Debarred") — do NOT replace it with emojis or guess the status. Add analysis of courses needing attention with specific class counts needed.`);
       }
       if (allData.assignments && intents.includes('getassignments')) {
         dataContext += `\nAssignments Data: ${JSON.stringify(allData.assignments, null, 2)}`;
@@ -822,9 +828,10 @@ app.post('/api/chat', chatLimiter, async (req, res) => {
         **IMPORTANT NOTE**: This calculator calculates attendance to 74.01% (which VIT considers as 75%).
         
         Create a markdown table with these columns:
-        | Course | Attended/Total | Percentage | 75% Alert | Status |
+        | Course | Attended/Total | Percentage | 75% Alert | Debar Status |
         
         For the "75% Alert" column, use the 'alertMessage' field from the data.
+        For the "Debar Status" column, use the 'debarStatus' field directly from the data (e.g., "Permitted", "Debarred") — do NOT replace it with emojis or guess the status.
             
         After the table, add an Analysis section(keep it super short) with:
         - **Overall Summary**: How many courses are safe, in caution zone, or in danger
